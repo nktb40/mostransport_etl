@@ -1,32 +1,3 @@
-"""
-Локально:
-Создать архив с папкой проекта
-Скопировать архив на сервер
-scp isochrones3.tar.xz etl_user@130.193.35.13:
-
-Заходим на сервер
-ssh etl_user@130.193.35.13
-
-Разархивируем папку
-tar -xf isochrones3.tar.xz
-
-Запускаем расчёт
-cd isochrones3/scripts
-nohup python3 -u isochrones_v9.py > output.log &
-
-Просмотр логов:
-tail -f output.log 
-
-После окончания загрузки:
-
-Сформировать архив с папкой out
-cd ..
-tar cvzf out.tar.xz out/
-
-На локальном компе копируем файл с сервера
-scp etl_user@130.193.35.13:isochrones3/out.tar.xz isochrones3/
-
-"""
 
 import pandas
 import requests
