@@ -1,0 +1,17 @@
+/in/intervals/*
+/in/objects/*
+/in/routes_and_stops/*
+/out/alternative_routes/*
+/out/isochrones/public_transport/*.csv
+/out/isochrones/*.csv
+/out/metrics/tmp/*
+/out/metrics/*.csv
+/out/route2stops/*
+/out/routes/csv/*
+/out/routes/geojson/*
+/out/routes/mbtiles/*
+/out/station_neighbors/*
+/out/stations/csv/*
+/out/stations/geojson/*
+/out/stations/mbtiles/*
+!.keep
