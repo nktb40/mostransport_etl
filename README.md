@@ -1,5 +1,5 @@
 # mostransport_etl
-1. Если на сервере нет папки с проектом, то копируем проект из гита
+1. Если на сервере ETL нет папки с проектом, то копируем проект из гита
 
 	git clone git@github.com:nktb40/mostransport_etl.git
   
@@ -13,11 +13,11 @@
 2. Создать архив с входными данными
 
 
-3. Скопировать архив на сервер
+3. Скопировать архив на сервер ETL
 scp in.tar.xz etl_user@130.193.35.13:mostransport_etl/
 
 
-На сервере:
+На сервере ETL:
 
 4. Заходим на сервер
 ssh etl_user@130.193.35.13
@@ -42,3 +42,27 @@ tar cvzf out.tar.xz out/
 
 9. Скачивваем архив с результатами с сервера
 scp etl_user@130.193.35.13:mostransport_etl/out.tar.xz mostransport_etl/
+
+10. Отправляем архив на сервер mostransport
+scp out.tar.gz mostransport@mostransport.info:mostransport/current/seeds
+
+
+На сервере Mostransport:
+
+11. Разархивируем папку с выходными данными
+cur
+tar -xf seeds/out.tar.xz seeds/
+mv -v seeds/out/* seeds/
+rm -rf seeds/out
+rm seeds/out.tar.xz
+
+12. Запускам импорт данных:
+bundle exec rails db:seed
+
+Локально:
+
+13. Генерируем векторные файлы для остановок и маршрутов
+tippecanoe -o out/stations/mbtiles/USH-stations.mbtiles -l "bus_stops" -f out/stations/geojson/stations.geojson
+tippecanoe -o out/routes/mbtiles/USH-routes.mbtiles -f out/routes/geojson/routes.geojson
+
+14. Загружаем векторные файлы в MapBox

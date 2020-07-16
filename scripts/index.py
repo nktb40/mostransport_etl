@@ -1,4 +1,3 @@
-
 import pandas
 import requests
 import os
@@ -646,7 +645,7 @@ def generate_isochrones_public_transport(stops_in, part, times, with_interval,wi
 			#print(c)
 			ids = c['ids']
 			route_codes = c['routes']
-			properties = {'station_ids': ids, 'routes': route_codes}
+			properties = {'stop_ids': ids, 'routes': route_codes}
 			iso = walk_iso.query('station_id in @ids and geometry != None')['geometry'].tolist()
 			#iso = list(map(lambda x: asPolygon(np.array(json.loads(x))), iso))
 			union = unary_union(iso)
@@ -885,42 +884,42 @@ def run_metrics_in_threads(df, profile):
 # =========================== 
 print("Start", datetime.now())
 
-# #== Step 1: Загрузка данных по маршрутам и остановкам
+#== Step 1: Загрузка данных по маршрутам и остановкам
 
-# # Step 1.1: Загрузка маршрутов и остановок
-# load_route_and_stations()
+# Step 1.1: Загрузка маршрутов и остановок
+load_route_and_stations()
 
-# # Step 1.2: Загрузка альтернативноый маршрутов
-# generate_alternative_routes()
+# Step 1.2: Загрузка альтернативноый маршрутов
+generate_alternative_routes()
 
-# # Step 1.3: Загрузка доп. информации о маршрутах
-# get_routes_attributes()
+# Step 1.3: Загрузка доп. информации о маршрутах
+get_routes_attributes()
 
-# # Step 1.4: Выгрузка geojson для остановок
-# generate_stations_geojson()
+# Step 1.4: Выгрузка geojson для остановок
+generate_stations_geojson()
 
-# # Step 1.5: Выгрузка geojson для маршрутов
-# generate_routes_geojson()
+# Step 1.5: Выгрузка geojson для маршрутов
+generate_routes_geojson()
 
 
-# #== Step 2: Load isochrones
+#== Step 2: Load isochrones
 stations = read_stations() #.query('id == "12385684954284074"')
-# # Step 2.1: Load Walking isochrones
-# generate_isochrones("walking", stations, "w", "5,10,20,30")
+# Step 2.1: Load Walking isochrones
+generate_isochrones("walking", stations, "w", "5,10,20,30")
 
-# # Step 2.2: Load Cycling isochrones
-# generate_isochrones("cycling", stations, "w", "10,20,30")
+# Step 2.2: Load Cycling isochrones
+generate_isochrones("cycling", stations, "w", "10,20,30")
 
-# # Step 2.3: Load Driving isochrones
-# generate_isochrones("driving", stations, "w", "10,20,30")
+# Step 2.3: Load Driving isochrones
+generate_isochrones("driving", stations, "w", "10,20,30")
 
-# # Step 2.4: Загружаем изохроны Public transport
+# Step 2.4: Загружаем изохроны Public transport
 
-# # Step 2.4.1: Изохроны без интервалов и пересадок
-# generate_isochrones_public_transport(stations, "0", "10,20,30", "w", "0", "0")
+# Step 2.4.1: Изохроны без интервалов и пересадок
+run_public_transport_in_threads(stations, "10,20,30", "0", "0")
 
-# # Step 2.4.2: Находим соседние остановки для всех остановок
-# generate_station_neighbors()
+# Step 2.4.2: Находим соседние остановки для всех остановок
+generate_station_neighbors()
 
 #Step 2.4.3: Изохроны без интервалов, но с пересадками
 run_public_transport_in_threads(stations, "10,20,30", "0", "1")
