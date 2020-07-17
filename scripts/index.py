@@ -591,7 +591,7 @@ def generate_isochrones_public_transport(stops_in, part, times, with_interval,wi
 	# with_changes "1" - да / "0" - нет - учитывать или нет пересадки
 
 	stops = read_stations()
-	routes = read_routes().query("route_code in ['А119','А189']")
+	routes = read_routes()
 	route2stops = read_route2stops()
 	walk_iso = read_walk_iso()
 

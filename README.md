@@ -54,7 +54,9 @@ scp out.tar.xz mostransport@mostransport.info:mostransport/current/seeds
 
 11. Разархивируем папку с выходными данными
 cur
-tar -xf seeds/out.tar.xz seeds/
+cd seeds/
+tar -xf out.tar.xz
+cd ..
 mv -v seeds/out/* seeds/
 rm -rf seeds/out
 rm seeds/out.tar.xz
