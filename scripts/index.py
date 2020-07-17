@@ -71,6 +71,15 @@ def load_route_and_stations():
 		if item['subtype'] == 'bus':
 			route_code = 'А'+str(item['name'])
 			type_of_transport = 'автобус'
+		elif item['subtype'] == 'trolleybus':
+			route_code = 'Тб'+str(item['name'])
+			type_of_transport = 'троллейбус'
+		elif item['subtype'] == 'tram':
+			route_code = 'Тм'+str(item['name'])
+			type_of_transport = 'трамвай'
+		elif item['subtype'] == 'shuttle_bus':
+			route_code = 'Ш'+str(item['name'])
+			type_of_transport = 'шатл'
 		else:
 			print("New route type: "+item['subtype'])
 
@@ -582,7 +591,7 @@ def generate_isochrones_public_transport(stops_in, part, times, with_interval,wi
 	# with_changes "1" - да / "0" - нет - учитывать или нет пересадки
 
 	stops = read_stations()
-	routes = read_routes()
+	routes = read_routes().query("route_code in ['А119','А189']")
 	route2stops = read_route2stops()
 	walk_iso = read_walk_iso()
 
@@ -624,7 +633,6 @@ def generate_isochrones_public_transport(stops_in, part, times, with_interval,wi
 					# Находим связанные остановки для пересадочных маршрутов без смены остановки
 					con_stop = stops.query('id == @id').iloc[0]
 					connected_stops = get_stops_on_route_inside_isochrone(con_stop, stops, routes, route2stops, cur_routes, intervals, with_interval, c['contour'], connected_stops, distance)
-					
 					route_nums = con_stop['route_numbers'].split("; ")
 					cur_routes = list(set(route_nums + cur_routes))
 
@@ -640,7 +648,6 @@ def generate_isochrones_public_transport(stops_in, part, times, with_interval,wi
 							cur_routes = list(set(route_nums + cur_routes))
 
 		# Находим пешие изохроны для остановок, чтобы построить из них автобусные и записываем в файл
-		
 		for c in connected_stops: 
 			#print(c)
 			ids = c['ids']
@@ -673,6 +680,7 @@ def get_stops_on_route_inside_isochrone(stop, stops, routes, route2stops, cur_ro
 	if len(route_nums) > 0:
 
 		filtered_routes = routes.query('route_code in @route_nums')
+
 		if len(filtered_routes) > 0:
 
 			stop_id = stop['id']
@@ -702,9 +710,11 @@ def get_stops_on_route_inside_isochrone(stop, stops, routes, route2stops, cur_ro
 				route_coord = route['geometry']
 
 				for i_d, direction in  r2s.iterrows():
+					
+					stops_ids = direction['station_ids']
 
 					dirIndex = direction['track_no']
-
+					
 					if len(route_coord) == 1:
 						line = route_coord[0]
 					elif dirIndex == 1:
@@ -732,15 +742,18 @@ def get_stops_on_route_inside_isochrone(stop, stops, routes, route2stops, cur_ro
 					pointOnRoute = nearest_points(multi_point,point)[0]
 					
 					# Находим точки остановок для маршрута
-					stops_ids = direction['station_ids']
 					stopsOnRoute = stops.copy()
 					stopsOnRoute = stopsOnRoute.query('id in @stops_ids')
 
 					# Определяем близжайшую точку на маршруте для всех остановок направления
 					stopsOnRoute['pointOnRoute'] = stopsOnRoute.apply(lambda row: nearest_points(multi_point,row['geometry'])[0], axis=1)
 
-					# Обрезаем линию от остановки до конца маршрута
-					line = split(line, pointOnRoute)[-1]
+					# Проверяем, что выбранная остановка не является последней на направлении
+					if stop_id == stops_ids[-1]:
+						line = pointOnRoute
+					else:
+						# Обрезаем линию от остановки до конца маршрута
+						line = split(line, pointOnRoute)[-1]
 					
 					# Нарезаем маршруты по длине, соответствующей времени пути
 					for t in times.split(','):
@@ -750,7 +763,10 @@ def get_stops_on_route_inside_isochrone(stop, stops, routes, route2stops, cur_ro
 						if t_modif > 0:
 							start_dist = 0
 							stop_dist = 15 * t_modif / 60
-							sliced = line_slice_along(line,start_dist,stop_dist)
+							if line.type == "Point":
+								sliced = line
+							else:
+								sliced = line_slice_along(line,start_dist,stop_dist)
 
 							# Определяем точки, которые находятся внутри маршрута заданной длины
 							stopsOnRoute['on_time_flag'] = stopsOnRoute.apply(lambda row: row['pointOnRoute'].intersects(sliced), axis=1)
@@ -841,6 +857,7 @@ def get_objects_inside_info(df,bounds,geometry):
 
 # Запуск расчёта изохронов в многопоточном режиме
 def run_public_transport_in_threads(df, times, with_interval, with_changes):
+	print("Start gen iso public_transport. With interval: "+with_interval+" with_changes: "+with_changes+". Time:",datetime.now())
 	df_split = np.array_split(df, threads_num)
 	processes = []
 	for i in range(0,threads_num):
@@ -860,8 +877,11 @@ def run_public_transport_in_threads(df, times, with_interval, with_changes):
 
 	out_df.to_csv("../out/isochrones/public_transport/isochrones_public_transport_int"+with_interval+"_wch"+with_changes+".csv", sep=";")
 
+	print("Finish gen iso public_transport. With interval: "+with_interval+" with_changes: "+with_changes+". Time:",datetime.now())
+
 # Запуск расчёта метрик в многопоточном режиме
 def run_metrics_in_threads(df, profile):
+	print("Start gen metrics for: "+profile+". Time:",datetime.now())
 	df_split = np.array_split(df, threads_num)
 	processes = []
 	for i in range(0,threads_num):
@@ -880,6 +900,7 @@ def run_metrics_in_threads(df, profile):
 	 	os.remove(file_name)
 
 	out_df.to_csv("../out/metrics/metrics_"+profile+".csv", sep=";")
+	print("Finish gen metrics for: "+profile+". Time:",datetime.now())
 	    
 # =========================== 
 print("Start", datetime.now())
@@ -889,72 +910,73 @@ print("Start", datetime.now())
 # Step 1.1: Загрузка маршрутов и остановок
 load_route_and_stations()
 
-# # Step 1.2: Загрузка альтернативноый маршрутов
-# generate_alternative_routes()
+# Step 1.2: Загрузка альтернативноый маршрутов
+generate_alternative_routes()
 
-# # Step 1.3: Загрузка доп. информации о маршрутах
-# get_routes_attributes()
+# Step 1.3: Загрузка доп. информации о маршрутах
+get_routes_attributes()
 
-# # Step 1.4: Выгрузка geojson для остановок
-# generate_stations_geojson()
+# Step 1.4: Выгрузка geojson для остановок
+generate_stations_geojson()
 
-# # Step 1.5: Выгрузка geojson для маршрутов
-# generate_routes_geojson()
+# Step 1.5: Выгрузка geojson для маршрутов
+generate_routes_geojson()
 
 
-# #== Step 2: Load isochrones
-# stations = read_stations() #.query('id == "12385684954284074"')
-# # Step 2.1: Load Walking isochrones
-# generate_isochrones("walking", stations, "w", "5,10,20,30")
+#== Step 2: Load isochrones
+stations = read_stations() #.query('id == "12385581984806990"')
 
-# # Step 2.2: Load Cycling isochrones
-# generate_isochrones("cycling", stations, "w", "10,20,30")
+# Step 2.1: Load Walking isochrones
+generate_isochrones("walking", stations, "w", "5,10,20,30")
 
-# # Step 2.3: Load Driving isochrones
-# generate_isochrones("driving", stations, "w", "10,20,30")
+# Step 2.2: Load Cycling isochrones
+generate_isochrones("cycling", stations, "w", "10,20,30")
 
-# # Step 2.4: Загружаем изохроны Public transport
+# Step 2.3: Load Driving isochrones
+generate_isochrones("driving", stations, "w", "10,20,30")
 
-# # Step 2.4.1: Изохроны без интервалов и пересадок
-# run_public_transport_in_threads(stations, "10,20,30", "0", "0")
+# Step 2.4: Загружаем изохроны Public transport
 
-# # Step 2.4.2: Находим соседние остановки для всех остановок
-# generate_station_neighbors()
+# Step 2.4.1: Изохроны без интервалов и пересадок
+run_public_transport_in_threads(stations, "10,20,30", "0", "0")
 
-# #Step 2.4.3: Изохроны без интервалов, но с пересадками
-# run_public_transport_in_threads(stations, "10,20,30", "0", "1")
+# Step 2.4.2: Находим соседние остановки для всех остановок
+generate_station_neighbors()
 
-# # Step 2.4.4: Изохроны с интервалами, но без пересадок
-# if (os.path.exists('../in/intervals/intervals.csv')) or (math.isnan(default_interval) == False and default_interval != 0):
-# 	run_public_transport_in_threads(stations, "10,20,30", "1", "0")
+#Step 2.4.3: Изохроны без интервалов, но с пересадками
+run_public_transport_in_threads(stations, "10,20,30", "0", "1")
 
-# # Step 2.4.5: Изохроны с интервалами, и с пересадками
-# if (os.path.exists('../in/intervals/intervals.csv')) or (math.isnan(default_interval) == False and default_interval != 0):
-# 	run_public_transport_in_threads(stations, "10,20,30", "1", "1")
+# Step 2.4.4: Изохроны с интервалами, но без пересадок
+if (os.path.exists('../in/intervals/intervals.csv')) or (math.isnan(default_interval) == False and default_interval != 0):
+	run_public_transport_in_threads(stations, "10,20,30", "1", "0")
 
-# # Step 2.4.6: Загрузка изохронов маршрутов
-# generate_route_isochrones()
+# Step 2.4.5: Изохроны с интервалами, и с пересадками
+if (os.path.exists('../in/intervals/intervals.csv')) or (math.isnan(default_interval) == False and default_interval != 0):
+	run_public_transport_in_threads(stations, "10,20,30", "1", "1")
 
-# #== Step 3: Загрузка метрик
+# Step 2.4.6: Загрузка изохронов маршрутов
+generate_route_isochrones()
 
-# # Step 3.1: Загрузка метрик для пеших изохронов
-# iso_df = pandas.read_csv("../out/isochrones/isochrones_walking.csv", sep=";")
-# run_metrics_in_threads(iso_df, "walking")
+#== Step 3: Загрузка метрик
 
-# # Step 3.2: Загрузка метрик для велосипедных изохронов
-# iso_df = pandas.read_csv("../out/isochrones/isochrones_cycling.csv", sep=";")
-# run_metrics_in_threads(iso_df, "cycling")
+# Step 3.1: Загрузка метрик для пеших изохронов
+iso_df = pandas.read_csv("../out/isochrones/isochrones_walking.csv", sep=";")
+run_metrics_in_threads(iso_df, "walking")
 
-# # Step 3.3: Загрузка метрик для автомобильных изохронов
-# iso_df = pandas.read_csv("../out/isochrones/isochrones_driving.csv", sep=";")
-# run_metrics_in_threads(iso_df, "driving")
+# Step 3.2: Загрузка метрик для велосипедных изохронов
+iso_df = pandas.read_csv("../out/isochrones/isochrones_cycling.csv", sep=";")
+run_metrics_in_threads(iso_df, "cycling")
 
-# # Step 3.4: Загрузка метрик для изохронов ОТ
+# Step 3.3: Загрузка метрик для автомобильных изохронов
+iso_df = pandas.read_csv("../out/isochrones/isochrones_driving.csv", sep=";")
+run_metrics_in_threads(iso_df, "driving")
 
-# isochrone_files = glob.glob("../out/isochrones/public_transport/*.csv")
+# Step 3.4: Загрузка метрик для изохронов ОТ
 
-# for i, file_name in enumerate(isochrone_files):
-# 	iso_df = pandas.read_csv(file_name, sep=";")
-# 	run_metrics_in_threads(iso_df, "public_transport-"+str(i+1))
+isochrone_files = glob.glob("../out/isochrones/public_transport/*.csv")
 
-# print("Finish", datetime.now())
+for i, file_name in enumerate(isochrone_files):
+	iso_df = pandas.read_csv(file_name, sep=";")
+	run_metrics_in_threads(iso_df, "public_transport-"+str(i+1))
+
+print("Finish", datetime.now())

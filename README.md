@@ -1,7 +1,10 @@
 # mostransport_etl
-1. Если на сервере ETL нет папки с проектом, то копируем проект из гита
 
-	git clone git@github.com:nktb40/mostransport_etl.git
+* Вместо 130.193.35.13 подставлять IP ETL сервера
+
+1. Если на сервере ETL нет папки mostransport_etl с проектом, то копируем проект из гита
+
+	git clone https://github.com/nktb40/mostransport_etl.git
   
    Если проект уже на сервере, то выполняем обновление 
 
@@ -26,12 +29,12 @@ ssh etl_user@130.193.35.13
 tar -xf in.tar.xz
 
 6. Запускаем расчёт
-cd isochrones3/scripts
-nohup python3 -u isochrones_v9.py > output.log &
+cd scripts
+nohup python3 -u index.py > output.log &
 
 7. Просмотр состояния загрузки в логах:
 
-tail -f output.log 
+tail -f output.log
 
 8. После окончания загрузки формируем архив с папкой out
 cd ..
@@ -44,7 +47,7 @@ tar cvzf out.tar.xz out/
 scp etl_user@130.193.35.13:mostransport_etl/out.tar.xz mostransport_etl/
 
 10. Отправляем архив на сервер mostransport
-scp out.tar.gz mostransport@mostransport.info:mostransport/current/seeds
+scp out.tar.xz mostransport@mostransport.info:mostransport/current/seeds
 
 
 На сервере Mostransport:
@@ -61,7 +64,7 @@ bundle exec rails db:seed
 
 Локально:
 
-13. Генерируем векторные файлы для остановок и маршрутов
+13. Генерируем векторные файлы для остановок и маршрутов (вместо USH подставить код города)
 tippecanoe -o out/stations/mbtiles/USH-stations.mbtiles -l "bus_stops" -f out/stations/geojson/stations.geojson
 tippecanoe -o out/routes/mbtiles/USH-routes.mbtiles -f out/routes/geojson/routes.geojson
 
