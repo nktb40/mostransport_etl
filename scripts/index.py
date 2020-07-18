@@ -64,6 +64,9 @@ def load_route_and_stations():
 		item = file['result']['items'][0]
 
 		# Загружаем данные по маршруту
+		# Сортируем направления, чтобы сначала было прямое, затем обратное
+		item['directions'].sort(key=lambda x: 0 if x['type'] == 'circular' else 1 if x['type'] == 'forward' else 2, reverse=False)
+		# Выгружаем геометрию маршрута
 		geometry = list(map(lambda x: shapely.wkt.loads(x['geometry']['selection']),item['directions']))
 		geometry = MultiLineString(geometry)
 
@@ -646,7 +649,7 @@ def generate_isochrones_public_transport(stops_in, part, times, with_interval,wi
 							
 							route_nums = neib_stop['route_numbers'].split("; ")
 							cur_routes = list(set(route_nums + cur_routes))
-
+		
 		# Находим пешие изохроны для остановок, чтобы построить из них автобусные и записываем в файл
 		for c in connected_stops: 
 			#print(c)
@@ -707,21 +710,20 @@ def get_stops_on_route_inside_isochrone(stop, stops, routes, route2stops, cur_ro
 						else:
 							interval = round(int(interval_list[0])/2)
 
-				route_coord = route['geometry']
+				route_coord = route['geometry']	
 
 				for i_d, direction in  r2s.iterrows():
 					
 					stops_ids = direction['station_ids']
+					dir_type = direction['route_type']
 
-					dirIndex = direction['track_no']
-					
 					if len(route_coord) == 1:
 						line = route_coord[0]
-					elif dirIndex == 1:
+					elif dir_type == 'forward':
 						line = route_coord[0]
-					elif dirIndex == 2:
+					elif dir_type == 'backward':
 						line = route_coord[1]
-					elif dirIndex == 0:
+					elif dir_type == 'circular':
 						st_pt = stops[stops['ID'] == direction['station_ids'][0]].iloc[0]
 						st_pt_coord = list(st_pt.geometry.coords)[0]
 						st_coord_1 = list(route_coord[0].coords)[0]
@@ -754,7 +756,7 @@ def get_stops_on_route_inside_isochrone(stop, stops, routes, route2stops, cur_ro
 					else:
 						# Обрезаем линию от остановки до конца маршрута
 						line = split(line, pointOnRoute)[-1]
-					
+
 					# Нарезаем маршруты по длине, соответствующей времени пути
 					for t in times.split(','):
 						# Время пути = время изохрона минус интервал ожидания минус время он от выбранной точки
@@ -910,7 +912,7 @@ print("Start", datetime.now())
 # Step 1.1: Загрузка маршрутов и остановок
 load_route_and_stations()
 
-# Step 1.2: Загрузка альтернативноый маршрутов
+# Step 1.2: Загрузка альтернативных маршрутов
 generate_alternative_routes()
 
 # Step 1.3: Загрузка доп. информации о маршрутах
@@ -924,7 +926,7 @@ generate_routes_geojson()
 
 
 #== Step 2: Load isochrones
-stations = read_stations() #.query('id == "12385581984806990"')
+stations = read_stations() #.query('id == "12385581875069176"')
 
 # Step 2.1: Load Walking isochrones
 generate_isochrones("walking", stations, "w", "5,10,20,30")

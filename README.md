@@ -1,7 +1,5 @@
 # mostransport_etl
 
-* Вместо 130.193.35.13 подставлять IP ETL сервера
-
 1. Если на сервере ETL нет папки mostransport_etl с проектом, то копируем проект из гита
 
 	git clone https://github.com/nktb40/mostransport_etl.git
@@ -17,13 +15,13 @@
 
 
 3. Скопировать архив на сервер ETL
-scp in.tar.xz etl_user@130.193.35.13:mostransport_etl/
+scp in.tar.xz etl_user@130.193.45.222:mostransport_etl/
 
 
 На сервере ETL:
 
 4. Заходим на сервер
-ssh etl_user@130.193.35.13
+ssh etl_user@130.193.45.222
 
 5. Разархивируем папку с входными данными
 tar -xf in.tar.xz
@@ -44,7 +42,7 @@ tar cvzf out.tar.xz out/
 Локально:
 
 9. Скачивваем архив с результатами с сервера
-scp etl_user@130.193.35.13:mostransport_etl/out.tar.xz mostransport_etl/
+scp etl_user@130.193.45.222:mostransport_etl/out.tar.xz mostransport_etl/
 
 10. Отправляем архив на сервер mostransport
 scp out.tar.xz mostransport@mostransport.info:mostransport/current/seeds
