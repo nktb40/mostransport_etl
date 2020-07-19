@@ -724,7 +724,7 @@ def get_stops_on_route_inside_isochrone(stop, stops, routes, route2stops, cur_ro
 					elif dir_type == 'backward':
 						line = route_coord[1]
 					elif dir_type == 'circular':
-						st_pt = stops[stops['ID'] == direction['station_ids'][0]].iloc[0]
+						st_pt = stops[stops['id'] == direction['station_ids'][0]].iloc[0]
 						st_pt_coord = list(st_pt.geometry.coords)[0]
 						st_coord_1 = list(route_coord[0].coords)[0]
 						st_coord_2 = list(route_coord[1].coords)[0]

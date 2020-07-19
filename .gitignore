@@ -3,6 +3,7 @@
 /in/routes_and_stops/*
 /out/alternative_routes/*
 /out/isochrones/public_transport/*.csv
+/out/isochrones/public_transport/tmp/*
 /out/isochrones/*.csv
 /out/metrics/tmp/*
 /out/metrics/*.csv
