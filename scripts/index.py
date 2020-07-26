@@ -53,7 +53,7 @@ def load_route_and_stations():
 
 	routes = geopandas.GeoDataFrame(columns=['city_code','id','route_number','type_of_transport','route_name','route_code','circular_flag','geometry'])
 	stations = geopandas.GeoDataFrame(columns=['city_code','id','station_name','route_numbers','geometry'])
-	route2stops = pandas.DataFrame(columns=['city_code','route_id','station_ids','route_code','route_type','track_no'])
+	route2stops = pandas.DataFrame(columns=['city_code','route_id','station_id','route_code','route_type','track_no','seq_no'])
 
 	for file_name in src_files:
 		file = json.load(open(file_name, 'r'))
@@ -64,6 +64,9 @@ def load_route_and_stations():
 		item = file['result']['items'][0]
 
 		# Загружаем данные по маршруту
+		# фильтруем направления, чтобы исключить дополнительные маршруты
+		item['directions'] = list(map(lambda x: x[1], list(filter(lambda x: x[1]['type'] != "additional" and not (x[1]['type'] == 'circular' and x[0] > 0), enumerate(item['directions'])))))
+		
 		# Сортируем направления, чтобы сначала было прямое, затем обратное
 		item['directions'].sort(key=lambda x: 0 if x['type'] == 'circular' else 1 if x['type'] == 'forward' else 2, reverse=False)
 		# Выгружаем геометрию маршрута
@@ -101,7 +104,8 @@ def load_route_and_stations():
 			'route_name': item['from_name'] + " - "+item['to_name'],
 			'route_code': route_code,
 			'circular_flag':circular_flag,
-			'geometry': json.dumps(shapely.geometry.mapping(geometry), separators=(',',':'))
+			'geometry': geometry
+			#'geometry': json.dumps(shapely.geometry.mapping(geometry), separators=(',',':'))
 		}
 
 		#print(route)
@@ -110,18 +114,20 @@ def load_route_and_stations():
 		# загружаем данные по остановкам
 		for i_d, direction in enumerate(item['directions']):
 			# Определяем код направления маршрута
-			if direction['type'] == 'circular':
+			direction_type =  direction['type']
+
+			if direction_type == 'circular':
 				if len(item['directions']) == 1:
 					track_no = 0
 				else:
 					track_no = i_d+1
-			elif direction['type'] == 'forward':
+			elif direction_type == 'forward':
 				track_no = 1
-			elif direction['type'] == 'backward':
+			elif direction_type == 'backward':
 				track_no = 2
 
 			# Определяем остановки
-			for platform in direction['platforms']:
+			for i_p, platform in enumerate(direction['platforms']):
 
 				station_id = platform['id']
 				station = stations.query('id == @station_id')
@@ -134,7 +140,8 @@ def load_route_and_stations():
 						'route_numbers': [route['route_code']],
 						'longitude': geometry.coords[0][0],
 						'latitude': geometry.coords[0][1],
-						'geometry': json.dumps(shapely.geometry.mapping(geometry), separators=(',',':'))
+						#'geometry': json.dumps(shapely.geometry.mapping(geometry), separators=(',',':'))
+						'geometry': geometry
 					}
 
 					stations = stations.append(station, ignore_index=True)
@@ -144,40 +151,70 @@ def load_route_and_stations():
 						station['route_numbers'].append(route['route_code'])
 
 				# Загружаем связь между маршрутом и остановкой
-				r2s = route2stops.query('route_id == @route_id and track_no == @track_no')
+				r2s = route2stops.query('route_id == @route_id and track_no == @track_no and station_id == @station_id')
 				
 				if r2s.empty:
 					r2s = {
 							'route_id': route_id,
-							'station_ids': [station_id],
+							'station_id': station_id,
 							'route_code': route_code,
-							'route_type': direction['type'],
-							'track_no': track_no
+							'route_type': direction_type,
+							'track_no': track_no,
+							'seq_no': i_p
 					}
 					route2stops = route2stops.append(r2s, ignore_index=True)
-				else:
-					r2s = r2s.iloc[0]
-					if station_id not in r2s['station_ids']:
-						r2s['station_ids'].append(station_id)
 	
+	# Выгружаем в файл связь маршрутов и остановок
+	route2stops['city_code'] = city_code
+	r2s_with_time = pandas.DataFrame(columns=['city_code','route_id','station_id','route_code','route_type','track_no','seq_no','route_time'])
+
+	for i, r2s in route2stops.iterrows():
+		if i == 0:
+			r2s['route_time'] = 0
+		else:
+			prev_stop = route2stops.iloc[i-1]
+			if r2s['route_id'] == prev_stop['route_id'] and r2s['track_no'] == prev_stop['track_no']:
+				route_id = r2s['route_id']
+				route = routes.query('id == @route_id').iloc[0]
+				line = route['geometry'][r2s['track_no']-1]
+
+				stop_id = r2s['station_id']
+				prev_stop_id = prev_stop['station_id']
+
+				startPt = stations.query('id == @prev_stop_id').iloc[0]
+				stopPt = stations.query('id == @stop_id').iloc[0]
+
+				new_line = line_slice(startPt, stopPt, line)
+				new_line_len = get_line_length(new_line)
+				route_time = round(new_line_len/15*60)
+
+				r2s['route_time'] = route_time
+			else:
+				r2s['route_time'] = 0
+		r2s_with_time = r2s_with_time.append(r2s[['city_code','route_id','station_id','route_code','route_type','track_no','seq_no','route_time']])
+
+	r2s_with_time.to_csv("../out/route2stops/route2stops.csv", sep=";")
+
+	# Выгружаем в файл маршруты
 	routes['city_code'] = city_code
+	routes['geometry'] = routes['geometry'].apply(lambda x: json.dumps(shapely.geometry.mapping(x), separators=(',',':')))
 	routes.to_csv("../out/routes/csv/routes.csv", sep=";")
 	
+	# Выгружаем в файл остановки
 	stations['city_code'] = city_code
 	stations['route_numbers'] = stations['route_numbers'].apply(lambda x: json.dumps(x,ensure_ascii=False))
+	stations['geometry'] = stations['geometry'].apply(lambda x: json.dumps(shapely.geometry.mapping(x), separators=(',',':')))
 	stations.to_csv("../out/stations/csv/stations.csv", sep=";")
 	
-	route2stops['city_code'] = city_code
-	route2stops['station_ids'] = route2stops['station_ids'].apply(lambda x: json.dumps(x))
-	route2stops.to_csv("../out/route2stops/route2stops.csv", sep=";")
-
 	print("Finish function load_route_and_stations: ",datetime.now())
+
 
 # Функция загрузки списка остановок
 def read_stations():
 	stations = pandas.read_csv("../out/stations/csv/stations.csv", sep=";")
 	stations['geometry'] = stations['geometry'].apply(lambda x: shape(json.loads(x)))
 	stations['id'] = stations['id'].astype(str)
+	stations['route_numbers'] = stations['route_numbers'].apply(lambda x: json.loads(x))
 	return stations
 
 # Функция загрузки списка маршрутов
@@ -189,7 +226,8 @@ def read_routes():
 # Функция загрузки связей маршрутов и остановок
 def read_route2stops():
 	route2stops = pandas.read_csv('../out/route2stops/route2stops.csv', sep=";")
-	route2stops['station_ids'] = route2stops['station_ids'].apply(json.loads)
+	route2stops['station_id'] = route2stops['station_id'].astype(str)
+	#route2stops['station_ids'] = route2stops['station_ids'].apply(json.loads)
 	return route2stops
 
 # Функция загрузки 5-ти минутных пеших изохронов
@@ -200,17 +238,23 @@ def read_walk_iso():
 
 # Функция генерации geojson файлов для остановок
 def generate_stations_geojson():
+	print("Start function generate_stations_geojson: ",datetime.now())
+
 	df_in = read_stations()[['id','city_code','station_name','route_numbers','geometry']]
 	df_in['id'] = df_in['id'].astype(str)
-	df_in['route_numbers'] = df_in['route_numbers'].apply(lambda x: "; ".join(json.loads(x)))
+	df_in['route_numbers'] = df_in['route_numbers'].apply(lambda x: "; ".join(x))
 	df_in.rename(columns={"id": "global_id", "station_name":"StationName", "route_numbers":"RouteNumbers"}, errors="raise",inplace=True)
 	
 	df_in["tippecanoe"] = json.dumps({"layer" : "bus_stops"}, separators=(',',':'))
 	df_out = geopandas.GeoDataFrame(df_in)
 	df_out.to_file("../out/stations/geojson/stations.geojson", driver='GeoJSON')
 
+	print("Finish function generate_stations_geojson: ",datetime.now())
+
 # Функция генерации geojson файлов для маршрутов
 def generate_routes_geojson():
+	print("Start function generate_routes_geojson: ",datetime.now())
+
 	df_in = read_routes()[['id','city_code','route_name','route_code','geometry']]
 	df_in['id'] = df_in['id'].astype(str)
 	df_in.rename(columns={"id": "ID", "route_name":"RouteName"}, errors="raise",inplace=True)
@@ -219,8 +263,11 @@ def generate_routes_geojson():
 	df_out = geopandas.GeoDataFrame(df_in)
 	df_out.to_file("../out/routes/geojson/routes.geojson", driver='GeoJSON')
 
+	print("Finish function generate_routes_geojson: ",datetime.now())
+
 # Генерация маршрутов по автомобильным доргам для расчётв прямолинейности
 def generate_alternative_routes():
+	print("Start function generate_alternative_routes:",datetime.now())
 	routes = read_routes()
 	routes.query('circular_flag == False', inplace=True)
 	
@@ -229,15 +276,19 @@ def generate_alternative_routes():
 	routes_len = len(routes)
 	for i_r, route in routes.iterrows():
 		print(str(i_r)+" from "+str(routes_len)+ " last: "+route['route_code'])
-
+		
 		directions = route.geometry
-		direct_len = directions[0].length
-		back_len = directions[1].length
 
-		if direct_len > back_len:
+		if len(directions) == 1:
 			route_line = directions[0]
 		else:
-			route_line = directions[1]
+			direct_len = directions[0].length
+			back_len = directions[1].length
+
+			if direct_len > back_len:
+				route_line = directions[0]
+			else:
+				route_line = directions[1]
 
 		first_point = str(route_line.coords[0][0])+","+str(route_line.coords[0][1])
 		last_point = str(route_line.coords[-1][0])+","+str(route_line.coords[-1][1])
@@ -260,6 +311,8 @@ def generate_alternative_routes():
 	
 	#print(auto_routes.loc[0])
 	auto_routes.to_file("../out/alternative_routes/alternative_routes.geojson", driver='GeoJSON')
+
+	print("Finish function generate_alternative_routes:",datetime.now())
 
 # Функция для добавляения атрибутов к маршрутам
 def get_routes_attributes():
@@ -310,7 +363,7 @@ def generate_route_isochrones():
 
 		route_id = route['id']
 		#print(route_id)
-		ids = route2stops.query('route_id == @route_id')['station_ids'].tolist()
+		ids = route2stops.query('route_id == @route_id')['station_id'].tolist()
 		if len(ids) > 0:
 			ids = [y for x in ids for y in x]
 			ids = list(set(ids))
@@ -389,6 +442,29 @@ def generate_isochrones(profile, points, mode, times):
 		time.sleep(0.2)
 
 	file.close()
+
+# Функция обрезания линии между двумя точками
+def line_slice(startPt, stopPt, line):
+	coords = list(line.coords)
+	multi_line = MultiPoint(line.coords)
+
+	if line.type == 'LineString':
+		
+		startVertex = nearest_points(multi_line, startPt['geometry'])[0].coords[0]
+		stopVertex = nearest_points(multi_line, stopPt['geometry'])[0].coords[0]
+
+		start_indx = coords.index(startVertex)
+		stop_indx = coords.index(stopVertex)
+
+		ends = []
+		if start_indx <= stop_indx:	
+			ends = [start_indx, stop_indx]
+		else:
+			ends = [stop_indx, start_indx]
+
+		clipCoords = coords[ends[0] : ends[1]+1]
+
+		return LineString(clipCoords)
 
 # Функция обрезания линии по заданной длине
 def line_slice_along(line, startDist, stopDist):
@@ -585,6 +661,7 @@ def generate_station_neighbors():
 	station_neighbors.to_csv('../out/station_neighbors/station_neighbors.csv',sep=";", columns=['station_id','neighbor_ids'])
 	print("Finish function generate_station_neighbors: ", datetime.now())
 
+
 # Генерация изохронов для ОТ
 def generate_isochrones_public_transport(stops_in, part, times, with_interval,with_changes):
 	# stops_in DataFrame - спсиок остановок, для которых нужно рассчитать изохроны
@@ -621,13 +698,13 @@ def generate_isochrones_public_transport(stops_in, part, times, with_interval,wi
 		print("Iso. Public Transport. Proc: "+part+". Stop: "+str(ind)+" from: "+str(stop_in_cnt)+". Last stop ID: "+str(stop['id']))
 		
 		# Массив остановок изохронов
-		connected_stops = get_stops_on_route_inside_isochrone(stop, stops, routes, route2stops, [], intervals, with_interval, times, [],0)
+		connected_stops = get_stops_on_route_inside_isochrone(stop, route2stops, [], intervals, with_interval, times, [],0)
 
 		# Добавляем связанные остановки с учётом пересадок
 		if with_changes == "1":
 			cp = copy.deepcopy(connected_stops)
 			for c in cp: 
-				cur_routes = stop['route_numbers'].split("; ")
+				cur_routes = stop['route_numbers']
 				items = c['items']
 				for i, item in enumerate(items):
 					id = item['id']
@@ -635,8 +712,8 @@ def generate_isochrones_public_transport(stops_in, part, times, with_interval,wi
 
 					# Находим связанные остановки для пересадочных маршрутов без смены остановки
 					con_stop = stops.query('id == @id').iloc[0]
-					connected_stops = get_stops_on_route_inside_isochrone(con_stop, stops, routes, route2stops, cur_routes, intervals, with_interval, c['contour'], connected_stops, distance)
-					route_nums = con_stop['route_numbers'].split("; ")
+					connected_stops = get_stops_on_route_inside_isochrone(con_stop, route2stops, cur_routes, intervals, with_interval, c['contour'], connected_stops, distance)
+					route_nums = con_stop['route_numbers']
 					cur_routes = list(set(route_nums + cur_routes))
 
 					# Находим связанные остановки для пересадочних маршрутов со сменой остановки (соседние остановки)
@@ -645,9 +722,9 @@ def generate_isochrones_public_transport(stops_in, part, times, with_interval,wi
 						filtered_neibs = json.loads(filtered_neibs.iloc[0])
 						for n_id in filtered_neibs:
 							neib_stop = stops.query('id == @n_id').iloc[0]
-							connected_stops = get_stops_on_route_inside_isochrone(neib_stop, stops, routes, route2stops, cur_routes, intervals, with_interval, c['contour'], connected_stops, distance+5)
+							connected_stops = get_stops_on_route_inside_isochrone(neib_stop, route2stops, cur_routes, intervals, with_interval, c['contour'], connected_stops, distance+5)
 							
-							route_nums = neib_stop['route_numbers'].split("; ")
+							route_nums = neib_stop['route_numbers']
 							cur_routes = list(set(route_nums + cur_routes))
 		
 		# Находим пешие изохроны для остановок, чтобы построить из них автобусные и записываем в файл
@@ -668,141 +745,68 @@ def generate_isochrones_public_transport(stops_in, part, times, with_interval,wi
 
 	file_out.close()
 
-
 # Находим остановки на пути выбранных маршрутов внутри изохрона
-def get_stops_on_route_inside_isochrone(stop, stops, routes, route2stops, cur_routes, intervals, with_interval, times, connected_stops,dist_from_start_point):
-	# Фильтруем маршруты
-	route_nums = json.loads(stop['route_numbers'])
-	route_nums = [item for item in route_nums if item not in cur_routes]
+def get_stops_on_route_inside_isochrone(station, route2stops, cur_routes, intervals, with_interval, times, connected_stops, dist_from_start_point):
 
-	if len(intervals) == 0:
-		interval_from_default = True
-	else:
-		interval_from_default = False
-	
-	if len(route_nums) > 0:
+	# Определяем маршруты и направления, в которых учиствует выбранная остановка
+	station_id = station['id']
+	routes = route2stops.query('station_id == @station_id and route_code not in @cur_routes')
 
-		filtered_routes = routes.query('route_code in @route_nums')
+	# Запускаем цикл по каждому маршруту для определения остановок внутри ихохрона
+	for i_r, route in routes.iterrows():
+		
+		route_id = route['route_id']
+		route_code = route['route_code']
+		seq_no = route['seq_no']
+		track_no = route['track_no']
 
-		if len(filtered_routes) > 0:
+		# Определяем параметры верменных контуров изохронов
+		if with_interval == "1":
+			if len(intervals) > 0:
+				interval_list = intervals.query('route_code == @route_code')['avg_fact_interval'].tolist()
+				if len(interval_list) == 0:
+					interval = default_interval/2
+				else:
+					interval = round(int(interval_list[0])/2)
+			else:
+				interval = default_interval/2
+		else:
+			interval = 0
+			
+		times_array = list(map(lambda t: {"time":t, "t_modif": int(t) - interval - dist_from_start_point }, times.split(',')))
 
-			stop_id = stop['id']
-			point = stop['geometry']
+		# Параметры для цикла
+		route_time = 0
+		breaks = []
 
-			# Фильтруем связь маршрутов со списком остановок  
-			filtered_r2s = route2stops.copy()
-			filtered_r2s['has_stop'] = filtered_r2s['station_ids'].apply(lambda x: stop_id in x)
-			filtered_r2s.query('has_stop == True',inplace=True)
+		# Находим все остановки на направлении маршрута дальше выбранной остановки
+		for i_s, r2s in route2stops.query('route_id == @route_id and track_no == @track_no and seq_no >= @seq_no').iterrows():
+			
+			route_time += r2s['route_time']
+			stop_id = r2s['station_id']
+			item = {'id':stop_id, 'distance':route_time}
 
-			# Находим остановки на пути выбранных маршрутов внутри изохрона
-			for i_r, route in filtered_routes.iterrows():
-				route_code = route['route_code']
-				r2s = filtered_r2s.query('route_code == @route_code')
-				#print("route_code: "+route_code)
-				interval = 0
-				if with_interval == "1":
-					if interval_from_default == True:
-						interval = default_interval/2
+			for t in times_array:
+
+				if route_time <= t['t_modif']:
+					contour = [c for c in connected_stops if c['contour'] == t['time']]
+
+					# Добавляем ID остановок каждого контура в свой массив
+					if contour == []:
+						connected_stops.append({'contour':t['time'], 'ids':[stop_id], 'items':[item], 'routes':[route_code]})
 					else:
-						interval_list = intervals.query('route_code == @route_code')['avg_fact_interval'].tolist()
-						if len(interval_list) == 0:
-							print("No interval for route: "+route_code)
-						else:
-							interval = round(int(interval_list[0])/2)
+						contour = contour[0]
 
-				route_coord = route['geometry']	
+						contour['ids'] = list(set(contour['ids'] + [stop_id]))
+						contour['routes'] = list(set(contour['routes'] + [route_code]))
+						if dist_from_start_point == 0:
+							contour['items'] = deduplicate(contour['items'] + [item])
+				else:
+					breaks.append(t['time'])
+					breaks = list(set(breaks))
 
-				for i_d, direction in  r2s.iterrows():
-					
-					stops_ids = direction['station_ids']
-					dir_type = direction['route_type']
-
-					if len(route_coord) == 1:
-						line = route_coord[0]
-					elif dir_type == 'forward':
-						line = route_coord[0]
-					elif dir_type == 'backward':
-						line = route_coord[1]
-					elif dir_type == 'circular':
-						st_pt = stops[stops['id'] == direction['station_ids'][0]].iloc[0]
-						st_pt_coord = list(st_pt.geometry.coords)[0]
-						st_coord_1 = list(route_coord[0].coords)[0]
-						st_coord_2 = list(route_coord[1].coords)[0]
-
-						len1 = get_line_length(LineString([st_pt_coord,st_coord_1]))
-						len2 = get_line_length(LineString([st_pt_coord,st_coord_2]))
-
-						if len1 > len2:
-							line = route_coord[0]
-						else:
-							line = route_coord[1]
-
-					# Строим линию направления
-					multi_point = MultiPoint(line.coords)
-
-					# Определяем близжайшую к остановке точку на маршруте
-					pointOnRoute = nearest_points(multi_point,point)[0]
-					
-					# Находим точки остановок для маршрута
-					stopsOnRoute = stops.copy()
-					stopsOnRoute = stopsOnRoute.query('id in @stops_ids')
-
-					# Определяем близжайшую точку на маршруте для всех остановок направления
-					stopsOnRoute['pointOnRoute'] = stopsOnRoute.apply(lambda row: nearest_points(multi_point,row['geometry'])[0], axis=1)
-
-					# Проверяем, что выбранная остановка не является последней на направлении
-					if stop_id == stops_ids[-1]:
-						line = pointOnRoute
-					else:
-						# Обрезаем линию от остановки до конца маршрута
-						line = split(line, pointOnRoute)[-1]
-
-					# Нарезаем маршруты по длине, соответствующей времени пути
-					for t in times.split(','):
-						# Время пути = время изохрона минус интервал ожидания минус время он от выбранной точки
-						t_modif = int(t) - interval - dist_from_start_point
-
-						if t_modif > 0:
-							start_dist = 0
-							stop_dist = 15 * t_modif / 60
-							if line.type == "Point":
-								sliced = line
-							else:
-								sliced = line_slice_along(line,start_dist,stop_dist)
-
-							# Определяем точки, которые находятся внутри маршрута заданной длины
-							stopsOnRoute['on_time_flag'] = stopsOnRoute.apply(lambda row: row['pointOnRoute'].intersects(sliced), axis=1)
-							stopsOnTime = stopsOnRoute.query('on_time_flag == True')
-
-							if len(stopsOnTime) > 0:
-								stopsOnTime = stopsOnTime.assign(distance=np.nan)
-
-								# ===============
-								if dist_from_start_point == 0:
-									sliced_points = MultiPoint(sliced.coords)
-
-									stopsOnTime['line_index'] = stopsOnTime['pointOnRoute'].apply(lambda stp: next((i for i, x in enumerate(sliced_points) if x == stp),-1))
-									stopsOnTime.sort_values(by="line_index",inplace=True)
-									stopsOnTime['distance'] = stopsOnTime['line_index'].apply(lambda ind: round(get_line_length(LineString(sliced_points[0:ind+1]))/15*60) if ind > 0 else 0)
-									stopsOnTime.set_index('id',inplace=True, drop=False)
-								
-								stopsOnTime['items'] = stopsOnTime.apply(lambda x: {'id':x['id'], 'distance':x['distance']},axis=1)
-								# ===============
-
-								contour = [c for c in connected_stops if c['contour'] == t]
-								ids = stopsOnTime['id'].tolist()
-								items = stopsOnTime['items'].tolist()
-								
-								# Добавляем ID остановок каждого контура в свой массив
-								if contour == []:
-									connected_stops.append({'contour':t, 'ids':ids, 'items':items, 'routes':[route_code]})
-								else:
-									contour = contour[0]
-									
-									contour['ids'] = list(set(contour['ids'] + ids))
-									contour['routes'] = list(set(contour['routes'] + [route_code]))
-									if dist_from_start_point == 0:
-										contour['items'] = deduplicate(contour['items'] + items)
+			if len(breaks) == len(times_array):
+				break
 	return connected_stops
 
 # Функция генерации метрик для изохронов
@@ -926,7 +930,7 @@ generate_routes_geojson()
 
 
 #== Step 2: Load isochrones
-stations = read_stations() #.query('id == "12385581875069176"')
+stations = read_stations() #.query('id == "5067232480591909"')
 
 # Step 2.1: Load Walking isochrones
 generate_isochrones("walking", stations, "w", "5,10,20,30")
@@ -945,14 +949,14 @@ run_public_transport_in_threads(stations, "10,20,30", "0", "0")
 # Step 2.4.2: Находим соседние остановки для всех остановок
 generate_station_neighbors()
 
-#Step 2.4.3: Изохроны без интервалов, но с пересадками
+# Step 2.4.3: Изохроны без интервалов, но с пересадками
 run_public_transport_in_threads(stations, "10,20,30", "0", "1")
 
 # Step 2.4.4: Изохроны с интервалами, но без пересадок
 if (os.path.exists('../in/intervals/intervals.csv')) or (math.isnan(default_interval) == False and default_interval != 0):
 	run_public_transport_in_threads(stations, "10,20,30", "1", "0")
 
-# Step 2.4.5: Изохроны с интервалами, и с пересадками
+# Step 2.4.5: Изохроны с интервалами и с пересадками
 if (os.path.exists('../in/intervals/intervals.csv')) or (math.isnan(default_interval) == False and default_interval != 0):
 	run_public_transport_in_threads(stations, "10,20,30", "1", "1")
 

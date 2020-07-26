@@ -1,12 +1,10 @@
 # mostransport_etl
 
-1. Если на сервере ETL нет папки mostransport_etl с проектом, то копируем проект из гита
+На сервере:
+
+1. Копируем проект из гита
 
    git clone https://github.com/nktb40/mostransport_etl.git
-  
-   Если проект уже на сервере, то выполняем обновление 
-
-   git pull origin master
 
 
 Локально:
