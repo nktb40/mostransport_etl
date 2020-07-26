@@ -92,8 +92,11 @@ def load_route_and_stations():
 		elif item['subtype'] == 'shuttle_bus':
 			route_code = 'Ш'+str(item['name'])
 			type_of_transport = 'шатл'
+		elif item['subtype'] ==  'premetro':
+			route_code = 'Мт'+str(item['name'])
+			type_of_transport = 'метротрам'
 		else:
-			print("New route type: "+item['subtype'])
+			print("New route type: ",item['subtype'],item['name'])
 
 		# Флаг кольцевого маршрута
 		if item['directions'][0]['type'] == 'circular':
@@ -935,8 +938,8 @@ print("Start", datetime.now())
 # #== Step 2: Load isochrones
 stations = read_stations() #.query('id == "5067232480591909"')
 
-# # Step 2.1: Load Walking isochrones
-# generate_isochrones("walking", stations, "w", "5,10,20,30")
+# Step 2.1: Load Walking isochrones
+generate_isochrones("walking", stations, "w", "5,10,20,30")
 
 # Step 2.2: Load Cycling isochrones
 generate_isochrones("cycling", stations, "w", "10,20,30")
