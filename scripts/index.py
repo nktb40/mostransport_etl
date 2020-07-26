@@ -64,6 +64,12 @@ def load_route_and_stations():
 		item = file['result']['items'][0]
 
 		# Загружаем данные по маршруту
+
+		# Приводим кольцевые маршруты к одному формату
+		for d in item['directions']:
+			if d['type'] == 'loop':
+				d['type'] = 'circular'
+
 		# фильтруем направления, чтобы исключить дополнительные маршруты
 		item['directions'] = list(map(lambda x: x[1], list(filter(lambda x: x[1]['type'] != "additional" and not (x[1]['type'] == 'circular' and x[0] > 0), enumerate(item['directions'])))))
 		
@@ -117,10 +123,7 @@ def load_route_and_stations():
 			direction_type =  direction['type']
 
 			if direction_type == 'circular':
-				if len(item['directions']) == 1:
-					track_no = 0
-				else:
-					track_no = i_d+1
+				track_no = 1
 			elif direction_type == 'forward':
 				track_no = 1
 			elif direction_type == 'backward':
@@ -911,29 +914,29 @@ def run_metrics_in_threads(df, profile):
 # =========================== 
 print("Start", datetime.now())
 
-#== Step 1: Загрузка данных по маршрутам и остановкам
+# #== Step 1: Загрузка данных по маршрутам и остановкам
 
-# Step 1.1: Загрузка маршрутов и остановок
-load_route_and_stations()
+# # Step 1.1: Загрузка маршрутов и остановок
+# load_route_and_stations()
 
-# Step 1.2: Загрузка альтернативных маршрутов
-generate_alternative_routes()
+# # Step 1.2: Загрузка альтернативных маршрутов
+# generate_alternative_routes()
 
-# Step 1.3: Загрузка доп. информации о маршрутах
-get_routes_attributes()
+# # Step 1.3: Загрузка доп. информации о маршрутах
+# get_routes_attributes()
 
-# Step 1.4: Выгрузка geojson для остановок
-generate_stations_geojson()
+# # Step 1.4: Выгрузка geojson для остановок
+# generate_stations_geojson()
 
-# Step 1.5: Выгрузка geojson для маршрутов
-generate_routes_geojson()
+# # Step 1.5: Выгрузка geojson для маршрутов
+# generate_routes_geojson()
 
 
-#== Step 2: Load isochrones
+# #== Step 2: Load isochrones
 stations = read_stations() #.query('id == "5067232480591909"')
 
-# Step 2.1: Load Walking isochrones
-generate_isochrones("walking", stations, "w", "5,10,20,30")
+# # Step 2.1: Load Walking isochrones
+# generate_isochrones("walking", stations, "w", "5,10,20,30")
 
 # Step 2.2: Load Cycling isochrones
 generate_isochrones("cycling", stations, "w", "10,20,30")
