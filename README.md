@@ -63,7 +63,7 @@ scp out.tar.xz mostransport@mostransport.info:mostransport/current/seeds
 Локально:
 
 11. Генерируем векторные файлы для остановок и маршрутов (вместо USH подставить код города)
-tippecanoe -zg -o out/stations/mbtiles/VLG-stations.mbtiles -l "bus_stops" -f out/stations/geojson/stations.geojson
+tippecanoe -zg -o out/stations/mbtiles/USH-stations.mbtiles -l "bus_stops" -f out/stations/geojson/stations.geojson
 tippecanoe -zg -o out/routes/mbtiles/USH-routes.mbtiles -f out/routes/geojson/routes.geojson
 
 12. Загружаем векторные файлы в MapBox
@@ -74,10 +74,15 @@ tippecanoe -zg -o out/routes/mbtiles/USH-routes.mbtiles -f out/routes/geojson/ro
 13. Разархивируем папку с выходными данными
 cur
 cd seeds/
+
 tar -xf out.tar.xz
+
 cd ..
+
 mv -v seeds/out/* seeds/
+
 rm -rf seeds/out
+
 rm seeds/out.tar.xz
 
 14. Добавляем информацию о новом городе в файл db/seeds.rb
