@@ -64,6 +64,8 @@ bundle exec rails db:seed
 
 13. Генерируем векторные файлы для остановок и маршрутов (вместо USH подставить код города)
 tippecanoe -zg -o out/stations/mbtiles/VLG-stations.mbtiles -l "bus_stops" -f out/stations/geojson/stations.geojson
-tippecanoe -zg -o out/routes/mbtiles/USH-routes.mbtiles -f out/routes/geojson/routes.geojson
+tippecanoe -zg -o out/routes/mbtiles/PRM-routes.mbtiles -f out/routes/geojson/routes.geojson
+
+tippecanoe -zg -o USH-density.mbtiles -l "density" -f USH-density.GeoJSON 
 
 14. Загружаем векторные файлы в MapBox

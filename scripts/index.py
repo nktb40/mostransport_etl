@@ -57,7 +57,7 @@ def load_route_and_stations():
 
 	for file_name in src_files:
 		file = json.load(open(file_name, 'r'))
-		
+		print(file_name)
 		#print(file['result']['items'][0]['directions'][0]['platforms'][0].keys())
 		#print(file['result']['items'][0]['directions'][0]['platforms'][1])
 
@@ -95,6 +95,9 @@ def load_route_and_stations():
 		elif item['subtype'] ==  'premetro':
 			route_code = 'Мт'+str(item['name'])
 			type_of_transport = 'метротрам'
+		elif item['subtype'] ==  'metro':
+			route_code = 'М'+str(item['name'])
+			type_of_transport = 'метро'
 		else:
 			print("New route type: ",item['subtype'],item['name'])
 
@@ -370,10 +373,8 @@ def generate_route_isochrones():
 		route_id = route['id']
 		#print(route_id)
 		ids = route2stops.query('route_id == @route_id')['station_id'].tolist()
+		
 		if len(ids) > 0:
-			ids = [y for x in ids for y in x]
-			ids = list(set(ids))
-
 			iso = walk_iso.query('station_id in @ids and geometry != None')['geometry'].tolist()
 			union = unary_union(iso)
 
@@ -917,22 +918,22 @@ def run_metrics_in_threads(df, profile):
 # =========================== 
 print("Start", datetime.now())
 
-# #== Step 1: Загрузка данных по маршрутам и остановкам
+#== Step 1: Загрузка данных по маршрутам и остановкам
 
-# # Step 1.1: Загрузка маршрутов и остановок
-# load_route_and_stations()
+# Step 1.1: Загрузка маршрутов и остановок
+load_route_and_stations()
 
-# # Step 1.2: Загрузка альтернативных маршрутов
-# generate_alternative_routes()
+# Step 1.2: Загрузка альтернативных маршрутов
+generate_alternative_routes()
 
-# # Step 1.3: Загрузка доп. информации о маршрутах
-# get_routes_attributes()
+# Step 1.3: Загрузка доп. информации о маршрутах
+get_routes_attributes()
 
-# # Step 1.4: Выгрузка geojson для остановок
-# generate_stations_geojson()
+# Step 1.4: Выгрузка geojson для остановок
+generate_stations_geojson()
 
-# # Step 1.5: Выгрузка geojson для маршрутов
-# generate_routes_geojson()
+# Step 1.5: Выгрузка geojson для маршрутов
+generate_routes_geojson()
 
 
 # #== Step 2: Load isochrones
