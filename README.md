@@ -66,6 +66,9 @@ scp out.tar.xz mostransport@mostransport.info:mostransport/current/seeds
 tippecanoe -zg -o out/stations/mbtiles/USH-stations.mbtiles -l "bus_stops" -f out/stations/geojson/stations.geojson
 tippecanoe -zg -o out/routes/mbtiles/USH-routes.mbtiles -f out/routes/geojson/routes.geojson
 
+---- Выполнять не надо. Просто чтобы не потерять
+tippecanoe -zg -o EKB-density.mbtiles -l "density" -f ekb_density.geojson
+
 12. Загружаем векторные файлы в MapBox
 На выходе получим url загруженных tileset-файлов вида "nktb.22k1ka1u"
 

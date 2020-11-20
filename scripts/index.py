@@ -630,7 +630,7 @@ def generate_station_neighbors():
 
 	print("Start function generate_station_neighbors: ", datetime.now())
 
-	stations = read_stations()
+	stations = read_stations() #.query('id == "6052394926421880"')
 	stations = geopandas.GeoDataFrame(stations)
 
 	# Пешие изохроны 5-ти минутные
@@ -647,7 +647,7 @@ def generate_station_neighbors():
 		if len(iso) > 0:
 			iso = iso.iloc[0]
 			geometry = iso['geometry']
-			if geometry != None:
+			if not(geometry == None or geometry.is_empty == True):
 				bounds = geometry.bounds
 				in_bounds = stations.cx[bounds[0]:bounds[2], bounds[1]:bounds[3]]
 
