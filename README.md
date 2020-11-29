@@ -62,6 +62,7 @@ scp out.tar.xz mostransport@mostransport.info:mostransport/current/seeds
 
 Локально:
 
+--- П.11  и 12 больше не актуальны!
 11. Генерируем векторные файлы для остановок и маршрутов (вместо USH подставить код города)
 tippecanoe -zg -o out/stations/mbtiles/USH-stations.mbtiles -l "bus_stops" -f out/stations/geojson/stations.geojson
 tippecanoe -zg -o out/routes/mbtiles/USH-routes.mbtiles -f out/routes/geojson/routes.geojson
@@ -69,6 +70,7 @@ tippecanoe -zg -o out/routes/mbtiles/USH-routes.mbtiles -f out/routes/geojson/ro
 ---- Выполнять не надо. Просто чтобы не потерять
 tippecanoe -zg -o EKB-density.mbtiles -l "density" -f ekb_density.geojson
 
+--- Загружать вручную больше не нужно. Файлы загружаются автоматически
 12. Загружаем векторные файлы в MapBox
 На выходе получим url загруженных tileset-файлов вида "nktb.22k1ka1u"
 

@@ -18,10 +18,13 @@ import glob
 from turfik import distance as turf_dist
 from turfik import destination as turf_dest
 from turfik import helpers as turf_helpers
+from csv import DictReader
+import subprocess
 
 # Ключи для MapBox
 mapbox_key = "1271a705c49502b00213730c28f54f23"
 mbPublicToken = 'pk.eyJ1Ijoibmt0YiIsImEiOiJjazhscjEwanEwZmYyM25xbzVreWMyYTU1In0.dcztuEUgjlhgaalrc_KLMw'
+mbSecretToken = 'sk.eyJ1Ijoibmt0YiIsImEiOiJja2kyN3c5bDY2eWZxMnNsNjFvcDQzbHNiIn0.Xld2-RbDSScvhfIfdAqwTA'
 userName = 'nktb'
 
 # Загрузка параметров из файла с параметрами
@@ -868,6 +871,32 @@ def get_objects_inside_info(df,bounds,geometry):
 		population = 0
 	return {"cnt":points_cnt, "population":population}
 
+# Расчёт данных для зоны покрытия остановок
+def get_stops_cover_iso():
+	print("Start get_stops_area_iso")
+
+	iso_list = []
+
+	with open('../out/isochrones/isochrones_walking.csv', 'r') as read_obj:
+		reader = DictReader(read_obj, delimiter=';')
+		for row in reader:
+			if row['contour'] == '5':
+				geometry = shape(json.loads(row['geometry']))
+				iso_list.append(geometry)
+	
+	iso_union = unary_union(iso_list)
+	iso_json = json.dumps(geopandas.GeoSeries([iso_union]).__geo_interface__, separators=(',',':'))
+
+	file_out = open('../out/isochrones/geojson/isochrones_stops_cover.geojson', 'w')
+	file_out.write(iso_json)
+	file_out.close()
+
+	# Формироуем векторный файл
+	#os.system("tippecanoe -zg -o ../out/isochrones/mbtiles/"+city_code+"-stops_cover.mbtiles -l 'stops_cover' -f ../out/isochrones/geojson/isochrones_stops_cover.geojson")
+
+	print("Finish get_stops_area_iso")
+
+
 # Запуск расчёта изохронов в многопоточном режиме
 def run_public_transport_in_threads(df, times, with_interval, with_changes):
 	print("Start gen iso public_transport. With interval: "+with_interval+" with_changes: "+with_changes+". Time:",datetime.now())
@@ -914,7 +943,85 @@ def run_metrics_in_threads(df, profile):
 
 	out_df.to_csv("../out/metrics/metrics_"+profile+".csv", sep=";")
 	print("Finish gen metrics for: "+profile+". Time:",datetime.now())
-	    
+
+# Блок функций для создания TileSet-ов
+# Запуск внешних команд	
+def run_cmd(cmd):
+	os.system(cmd+" --token "+mbSecretToken+" > result")
+	message = open('result','r').read()
+	print(message)
+	return message
+
+# Загружаем на сервер source для tileset
+def upload_tile_source(layer_name, source_url):
+	cmd = "tilesets upload-source "+userName+" "+city_code+"-"+layer_name+" "+source_url+" --replace"
+	os.system(cmd+" --token "+mbSecretToken+" > result") 
+	result = json.loads(open('result','r').read())
+	return result['id']
+
+# Записываем рецепт в файл
+def write_tile_recipe(source_id, layer_name):
+	recip = {
+		"version": 1,
+		"layers": {
+			layer_name: {
+				"source": source_id,
+				"minzoom": 4,
+				"maxzoom": 16
+			}
+		}
+	}
+	file_out = open("recipe.json","w")
+	file_out.write(json.dumps(recip))
+	file_out.close()
+
+# Создаём tileset
+def create_tileset(layer_name):
+	# Создаём tileset
+	tile_id = userName+"."+city_code+"-"+layer_name
+	create_cmd = "tilesets create "+tile_id+" --recipe recipe.json --name "+city_code+"-"+layer_name
+	result = run_cmd(create_cmd)
+
+	# Удаляем tileset, если такой уже есть
+	if "already exists" in json.loads(result)["message"]:
+		del_cmd = "tilesets delete "+tile_id+" -f"
+		run_cmd(del_cmd)
+		run_cmd(create_cmd)
+
+	# Публикуем tileset
+	pub_cmd = "tilesets publish "+tile_id
+	run_cmd(pub_cmd)
+
+	return tile_id
+
+# Создание вектора для слоя с покрытием остановок
+def create_stops_cover_tileset():
+	# Загружаем geojson файл с изохроном на сервер mapbox. Создаём Source
+	source_id = upload_tile_source("stops_cover", "../out/isochrones/geojson/isochrones_stops_cover.geojson")
+	# Создаём рецепт
+	write_tile_recipe(source_id, "stops_cover")
+	# Создаём и публикуем TileSet
+	create_tileset("stops_cover")
+
+# Создание вектора для остановок
+def create_stations_tileset():
+	# Загружаем geojson файл с изохроном на сервер mapbox. Создаём Source
+	source_id = upload_tile_source("bus_stops", "../out/stations/geojson/stations.geojson")
+	# Создаём рецепт
+	write_tile_recipe(source_id, "bus_stops")
+	# Создаём и публикуем TileSet
+	create_tileset("bus_stops")
+
+# Создание вектора для маршрутов
+def create_routes_tileset():
+	# Загружаем geojson файл с изохроном на сервер mapbox. Создаём Source
+	source_id = upload_tile_source("routes", "../out/routes/geojson/routes.geojson")
+	# Создаём рецепт
+	write_tile_recipe(source_id, "routes")
+	# Создаём и публикуем TileSet
+	create_tileset("routes")
+
+
 # =========================== 
 print("Start", datetime.now())
 
@@ -991,5 +1098,22 @@ isochrone_files = glob.glob("../out/isochrones/public_transport/*.csv")
 for i, file_name in enumerate(isochrone_files):
 	iso_df = pandas.read_csv(file_name, sep=";")
 	run_metrics_in_threads(iso_df, "public_transport-"+str(i+1))
+
+
+# #== Step 4: Создание векторных файлов
+
+# Step 4.1: Создание вектора для слоя с покрытием остановок
+
+# Step 4.1.1:Создаём объединённый изохрон по всем остановкам
+get_stops_cover_iso()
+
+# Step 4.1.2:Создаём вектор
+create_stops_cover_tileset()
+
+# Step 4.2: Создание вектора для остановок
+create_stations_tileset()
+
+# Step 4.3: Создание вектора для маршрутов
+create_routes_tileset()
 
 print("Finish", datetime.now())
