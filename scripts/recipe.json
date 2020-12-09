@@ -1,1 +1,1 @@
-{"version": 1, "layers": {"routes": {"source": "mapbox://tileset-source/nktb/USH-routes", "minzoom": 4, "maxzoom": 16}}}
+{"version": 1, "layers": {"density": {"source": "mapbox://tileset-source/nktb/TUL-density", "minzoom": 4, "maxzoom": 16}}}

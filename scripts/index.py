@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 import pandas
 import requests
 import os
@@ -20,6 +22,7 @@ from turfik import destination as turf_dest
 from turfik import helpers as turf_helpers
 from csv import DictReader
 import subprocess
+import selenium
 
 # Ключи для MapBox
 mapbox_key = "1271a705c49502b00213730c28f54f23"
@@ -43,10 +46,11 @@ if 'threads_num' in keys:
 else:
 	threads_num = 1
 	
-
 print("Param city_code =",city_code)
 print("Param default_interval =",default_interval)
 
+# Очередь для загрузки тайлсетов
+tiles_queue = []
 
 # Функция загрузки Маршрутов, Остановок и их связей
 def load_route_and_stations():
@@ -944,6 +948,65 @@ def run_metrics_in_threads(df, profile):
 	out_df.to_csv("../out/metrics/metrics_"+profile+".csv", sep=";")
 	print("Finish gen metrics for: "+profile+". Time:",datetime.now())
 
+# Функция генерации слоя плотости маршрутов
+def generate_route_density():
+	print("Start generate_route_density. Time:",datetime.now())
+	routes_file = open("../out/routes/geojson/routes.geojson","r")
+	routes = json.load(routes_file)
+
+	# Словарь для хранения простых частей маршрутов и подсчёта плотности
+	lines_dict = []
+
+	t1 = time.perf_counter()
+	for route in routes['features']:
+		route_code = route['properties']['route_code']
+		print("density, route_code: ",route_code)
+
+		geometry = route['geometry']
+		# Если тип 'LineString', то оборачиваем в массив, чтобы одинаково обрабатывать с MultyLineString
+		if geometry['type'] == 'LineString':
+			coords = [geometry['coordinates']]
+		else:
+			coords = geometry['coordinates']
+		
+		# Проходим в цикле по координатам каждой линии
+		for points in coords:
+			points_len = len(points)
+			for i, point in enumerate(points):
+				if i < points_len-1:
+					line = [point,points[i+1]]
+
+					# Ищем линию с такими же координатами
+					dens_obj = list(filter(lambda x: x['line'] == line, lines_dict))
+					# Если такой линии нет, то добавляем новую запись в список
+					if len(dens_obj) == 0: 
+						lines_dict.append({'line':line, 'routes':[route_code], 'field_2':1})
+					# Если линия находится и маршрут ранее не был добавлен, то добавляем его в список
+					elif route_code not in dens_obj[0]['routes']:
+						dens_obj[0]['routes'].append(route_code)
+						dens_obj[0]['field_2'] += 1
+						
+
+	# Конвертируем в объекты с shapely геометриями
+	features = [] 
+	for line in lines_dict:
+		f = {
+				'field_2': line['field_2'],
+				'routes': json.dumps(line['routes'],ensure_ascii=False),
+				'geometry': LineString(line['line'])
+			}
+		features.append(f)
+
+	# Выгружаем в geojson
+	geopandas.GeoDataFrame(features).to_file("../out/density/routes_density.geojson", driver='GeoJSON')
+	
+	t2 = time.perf_counter()
+	print(f"{t2 - t1:0.4f}")
+	routes_file.close()
+
+	print("Finish generate_route_density. Time:",datetime.now())
+
+
 # Блок функций для создания TileSet-ов
 # Запуск внешних команд	
 def run_cmd(cmd):
@@ -956,8 +1019,12 @@ def run_cmd(cmd):
 def upload_tile_source(layer_name, source_url):
 	cmd = "tilesets upload-source "+userName+" "+city_code+"-"+layer_name+" "+source_url+" --replace"
 	os.system(cmd+" --token "+mbSecretToken+" > result") 
-	result = json.loads(open('result','r').read())
-	return result['id']
+	res_str = open('result','r').read()
+	if res_str != "":
+		result = json.loads(res_str)
+		return result['id']
+	else:
+		return res_str
 
 # Записываем рецепт в файл
 def write_tile_recipe(source_id, layer_name):
@@ -975,12 +1042,40 @@ def write_tile_recipe(source_id, layer_name):
 	file_out.write(json.dumps(recip))
 	file_out.close()
 
+# Проверка статуса очереди
+def check_queue_status():
+	print("Checking for tilests queue status:")
+	for layer_name in tiles_queue:
+		tile_id = userName+"."+city_code+"-"+layer_name
+		cmd = "tilesets status "+tile_id
+		status = json.loads(run_cmd(cmd))['status']
+		
+		if status == 'success':
+			tiles_queue.remove(layer_name)
+
+	if len(tiles_queue) < 2:
+		return 'OK'
+	else:
+		print("No available queue for tileset. Waiting 60 sec...")
+		return 'WAIT'
+
+
 # Создаём tileset
 def create_tileset(layer_name):
+	# Ждём, когда освободится очередь на загрузку
+	while True:
+		if check_queue_status() == 'OK':
+			break
+		else:
+			time.sleep(60)
+
 	# Создаём tileset
 	tile_id = userName+"."+city_code+"-"+layer_name
 	create_cmd = "tilesets create "+tile_id+" --recipe recipe.json --name "+city_code+"-"+layer_name
 	result = run_cmd(create_cmd)
+
+	# Добавляем в очередь новый слой
+	tiles_queue.append(layer_name)
 
 	# Удаляем tileset, если такой уже есть
 	if "already exists" in json.loads(result)["message"]:
@@ -1021,6 +1116,16 @@ def create_routes_tileset():
 	# Создаём и публикуем TileSet
 	create_tileset("routes")
 
+# Создание вектора для плотности маршрутов
+def create_routes_density_tileset():
+	# Загружаем geojson файл с изохроном на сервер mapbox. Создаём Source
+	source_id = upload_tile_source("density", "../out/density/routes_density.geojson")
+	# Создаём рецепт
+	write_tile_recipe(source_id, "density")
+	# Создаём и публикуем TileSet
+	create_tileset("density")
+
+
 
 # =========================== 
 print("Start", datetime.now())
@@ -1043,7 +1148,7 @@ generate_stations_geojson()
 generate_routes_geojson()
 
 
-# #== Step 2: Load isochrones
+#== Step 2: Load isochrones
 stations = read_stations() #.query('id == "5067232480591909"')
 
 # Step 2.1: Load Walking isochrones
@@ -1100,20 +1205,30 @@ for i, file_name in enumerate(isochrone_files):
 	run_metrics_in_threads(iso_df, "public_transport-"+str(i+1))
 
 
-# #== Step 4: Создание векторных файлов
+#== Step 4: Создание векторных файлов
 
 # Step 4.1: Создание вектора для слоя с покрытием остановок
 
 # Step 4.1.1:Создаём объединённый изохрон по всем остановкам
 get_stops_cover_iso()
 
-# Step 4.1.2:Создаём вектор
+# Step 4.1.2:Создаём вектор для покрытия остановками
 create_stops_cover_tileset()
+
 
 # Step 4.2: Создание вектора для остановок
 create_stations_tileset()
 
 # Step 4.3: Создание вектора для маршрутов
 create_routes_tileset()
+
+
+# Step 4.4: Создание вектора для плотности маршрутов
+
+# Step 4.1.1: Создаём geoJson с плотностью
+generate_route_density()
+
+# Step 4.1.2: Создаём вуктор с плотностью
+create_routes_density_tileset()
 
 print("Finish", datetime.now())

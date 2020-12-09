@@ -16,4 +16,5 @@
 /out/stations/csv/*
 /out/stations/geojson/*
 /out/stations/mbtiles/*
+/out/density/*
 !.keep
