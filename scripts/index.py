@@ -1,56 +1,63 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import pandas
-import requests
 import os
 import json
-import time
-import copy
+#import copy
 from datetime import datetime
 import math
 import shapely
 import numpy as np
 from shapely.geometry import *
-from shapely.ops import split, substring, unary_union, nearest_points
+#from shapely.ops import unary_union
 import geopandas
-import re
-from geopy import distance
 import multiprocessing 
 import glob
-from turfik import distance as turf_dist
-from turfik import destination as turf_dest
-from turfik import helpers as turf_helpers
-from csv import DictReader
-import subprocess
-import selenium
+from csv import DictReader, DictWriter
+import mapbox
+import turf
+import reforma
+import postgres
+import isochrones
+import scraper
+import metrics
+import dtp
 
-# Ключи для MapBox
-mapbox_key = "1271a705c49502b00213730c28f54f23"
-mbPublicToken = 'pk.eyJ1Ijoibmt0YiIsImEiOiJjazhscjEwanEwZmYyM25xbzVreWMyYTU1In0.dcztuEUgjlhgaalrc_KLMw'
-mbSecretToken = 'sk.eyJ1Ijoibmt0YiIsImEiOiJja2kyN3c5bDY2eWZxMnNsNjFvcDQzbHNiIn0.Xld2-RbDSScvhfIfdAqwTA'
-userName = 'nktb'
+
+# Параметры
+city_code = ""
+city_name = ""
+region_name = ""
+threads_num = 6
+default_interval = 10
+arch_dir = ""
 
 # Загрузка параметров из файла с параметрами
-global_params = json.load(open("../in/params/params.json", 'r'))
-keys = global_params.keys()
+def init():
+	global city_code, city_name, region_name, threads_num, default_interval, arch_dir
 
-city_code = global_params['city_code']
+	with open("../in/params/params.json", 'r') as file:
+		city_params = json.load(file)
+		keys = city_params.keys()
 
-if 'default_interval' in keys:
-	default_interval = global_params['default_interval']
-else:
-	default_interval = 0
+		city_code = city_params['city_code']
+		city_name = city_params['city_name']
+		region_name = city_params['region_name']
 
-if 'threads_num' in keys:
-	threads_num = global_params['threads_num']
-else:
-	threads_num = 1
+		if 'default_interval' in keys:
+			default_interval = city_params['default_interval']
 	
-print("Param city_code =",city_code)
-print("Param default_interval =",default_interval)
+	with open("../global_params.json", 'r') as file:
+		global_params = json.load(file)
+		threads_num = global_params['threads_num']
+		arch_dir = global_params['archive_folder_dir']
 
-# Очередь для загрузки тайлсетов
-tiles_queue = []
+	print("Param city_code =",city_code)
+	print("Param default_interval =",default_interval)
+
+
+def get_params():
+	return city_name, region_name
 
 # Функция загрузки Маршрутов, Остановок и их связей
 def load_route_and_stations():
@@ -123,6 +130,7 @@ def load_route_and_stations():
 			'route_name': item['from_name'] + " - "+item['to_name'],
 			'route_code': route_code,
 			'circular_flag':circular_flag,
+			'bbox': get_bbox(geometry),
 			'geometry': geometry
 			#'geometry': json.dumps(shapely.geometry.mapping(geometry), separators=(',',':'))
 		}
@@ -186,7 +194,8 @@ def load_route_and_stations():
 
 	for i, r2s in route2stops.iterrows():
 		if i == 0:
-			r2s['route_time'] = 0
+			r2s['route_time'] = None
+			r2s['distance'] = None
 		else:
 			prev_stop = route2stops.iloc[i-1]
 			if r2s['route_id'] == prev_stop['route_id'] and r2s['track_no'] == prev_stop['track_no']:
@@ -200,14 +209,16 @@ def load_route_and_stations():
 				startPt = stations.query('id == @prev_stop_id').iloc[0]
 				stopPt = stations.query('id == @stop_id').iloc[0]
 
-				new_line = line_slice(startPt, stopPt, line)
-				new_line_len = get_line_length(new_line)
+				new_line = turf.line_slice(startPt, stopPt, line)
+				new_line_len = turf.get_line_length(new_line)
 				route_time = round(new_line_len/15*60)
 
 				r2s['route_time'] = route_time
+				r2s['distance'] = round(new_line_len*1000)
 			else:
-				r2s['route_time'] = 0
-		r2s_with_time = r2s_with_time.append(r2s[['city_code','route_id','station_id','route_code','route_type','track_no','seq_no','route_time']])
+				r2s['route_time'] = None
+				r2s['distance'] = None
+		r2s_with_time = r2s_with_time.append(r2s[['city_code','route_id','station_id','route_code','route_type','track_no','seq_no','route_time','distance']])
 
 	r2s_with_time.to_csv("../out/route2stops/route2stops.csv", sep=";")
 
@@ -224,6 +235,9 @@ def load_route_and_stations():
 	
 	print("Finish function load_route_and_stations: ",datetime.now())
 
+def get_bbox(geometry):
+	b = shape(geometry).bounds 
+	return [[b[0],b[1]],[b[2],b[3]]]
 
 # Функция загрузки списка остановок
 def read_stations():
@@ -245,12 +259,6 @@ def read_route2stops():
 	route2stops['station_id'] = route2stops['station_id'].astype(str)
 	#route2stops['station_ids'] = route2stops['station_ids'].apply(json.loads)
 	return route2stops
-
-# Функция загрузки 5-ти минутных пеших изохронов
-def read_walk_iso():
-	walk_iso = pandas.read_csv("../out/isochrones/isochrones_walking.csv", sep=";").query('contour == 5')
-	walk_iso['geometry'] = walk_iso['geometry'].apply(lambda x: shape(json.loads(x)))
-	return walk_iso
 
 # Функция генерации geojson файлов для остановок
 def generate_stations_geojson():
@@ -309,11 +317,7 @@ def generate_alternative_routes():
 		first_point = str(route_line.coords[0][0])+","+str(route_line.coords[0][1])
 		last_point = str(route_line.coords[-1][0])+","+str(route_line.coords[-1][1])
 
-		urlBase = 'https://api.mapbox.com/directions/v5/mapbox/driving/';
-		query = urlBase +first_point+";"+last_point+'?geometries=geojson'+'&access_token=' + mbPublicToken
-		headers = {'Content-type': 'Application/json', 'Accept': 'application/json'}
-		result = send_request("get", query, '', headers)
-
+		result = mapbox.get_route(first_point,last_point)
 		route_obj = sorted(result['routes'], key=lambda r: r['distance'])[0]
 		
 		auto_route = {
@@ -330,625 +334,8 @@ def generate_alternative_routes():
 
 	print("Finish function generate_alternative_routes:",datetime.now())
 
-# Функция для добавляения атрибутов к маршрутам
-def get_routes_attributes():
-	routes = read_routes()
 
-	routes['route_length'] = routes.apply(lambda r: round(get_line_length(r['geometry']),2), axis=1)
-
-	# Добавление интервалов
-	if os.path.exists('../in/intervals/intervals.csv'):
-		intervals = pandas.read_csv("../in/intervals/intervals.csv", sep=";", usecols=['location_code','route_id', 'route_code', 'avg_interval'])
-		new_routes = pandas.merge(routes, intervals, how='inner', on='route_code')
-		new_routes['route_cost'] = new_routes.apply(lambda r: round((60/r['avg_interval']*18-1)*r['route_length']*110), axis=1)
-	elif math.isnan(default_interval) == False and default_interval != 0:
-		new_routes = routes
-		new_routes['avg_interval'] = default_interval
-		new_routes['route_cost'] = new_routes.apply(lambda r: round((60/r['avg_interval']*18-1)*r['route_length']*110), axis=1)
-	else:
-		new_routes = routes
-		new_routes['avg_interval'] = 0
-		new_routes['route_cost'] = 0
-
-	# Добавление коэф. прямолинейности
-	alter_routes = geopandas.read_file("../out/alternative_routes/alternative_routes.geojson")
-	new_routes = pandas.merge(new_routes, alter_routes, how='left', on='route_code')
-
-	new_routes['straightness'] = new_routes.apply(lambda r: round(r['distance']/get_line_length(r['geometry_x'][0]),2), axis=1)
-	new_routes['bbox'] = new_routes['geometry_x'].apply(lambda g: get_bbox(g))
-	new_routes = new_routes[["city_code","id","route_code","avg_interval","route_length","route_cost","straightness","bbox"]]
-	new_routes.rename(columns={"id": "route_id"}, errors="raise",inplace=True)
-	new_routes['city_code'] = city_code
-	
-	new_routes.to_csv('../out/routes/csv/routes_info.csv', sep=";", columns=["city_code","route_id","route_code","avg_interval","route_length","route_cost","straightness","bbox"])
-
-def get_bbox(geometry):
-	b = shape(geometry).bounds 
-	return [[b[0],b[1]],[b[2],b[3]]]
-
-# Функция генерации изохронов маршрутов
-def generate_route_isochrones():
-	routes = read_routes()
-	route2stops = read_route2stops()
-	walk_iso = read_walk_iso()
-
-	route_cover = pandas.DataFrame(columns=['city_code','id','station_id','contour','profile','geometry'])
-
-	# Находим пешие изохроны для остановок и объединяем их в изохрон маршрута
-	for i_r, route in routes.iterrows(): 
-
-		route_id = route['id']
-		#print(route_id)
-		ids = route2stops.query('route_id == @route_id')['station_id'].tolist()
-		
-		if len(ids) > 0:
-			iso = walk_iso.query('station_id in @ids and geometry != None')['geometry'].tolist()
-			union = unary_union(iso)
-
-			route_iso = {
-				'profile': 'route_cover',
-				'contour': 5,
-				'route_id': str(route_id),
-				'id': city_code+"-"+str(route_id)+'-route_cover-5',
-				'geometry': json.dumps(shapely.geometry.mapping(union), separators=(',',':'))
-			}
-
-			route_cover = route_cover.append(route_iso, ignore_index=True)
-	
-	route_cover['city_code'] = city_code
-	route_cover.to_csv("../out/isochrones/isochrones_route_cover.csv", sep=';')
-
-# Функция получения изохронов через API MapBox
-def get_iso(profile, lon, lat, times):
-	#times = '10,20,30'
-	urlBase = 'https://api.mapbox.com/isochrone/v1/mapbox';
-	query = urlBase + '/' + profile + '/' + lon + ',' + lat + '?contours_minutes='+times+'&polygons=true&access_token=' + mbPublicToken
-	headers = {'Content-type': 'Application/json', 'Accept': 'application/json'}
-	data = ''
-	result = send_request("get", query, data, headers)
-	#print(result)
-	return result
-
-# Функция отправки запросов через API
-def send_request(method, url, params, headers):
-	#print("Sending request to:"+url)
-	try:
-		if method == "get":
-			result = requests.get(url, params, headers=headers)
-		elif method == "post":
-			result = requests.post(url, data=json.dumps(params), headers=headers)
-	except requests.exceptions.RequestException as e:  # This is the correct syntax
-		print(e)
-	return result.json()
-
-# Герерация изохронов: Пеших, Вело и Авто
-def generate_isochrones(profile, points, mode, times):
-	# mode: w - write, a - append
-	#times = '10,20,30'
-	points['id'] = points['id'].astype(str)
-	points['longitude'] = points['longitude'].astype(str)
-	points['latitude'] = points['latitude'].astype(str)
-	
-	row_num = 0
-	points_len = str(len(points))
-	print("Start generating "+profile+" isochrones: "+points_len)
-	file  = open('../out/isochrones/isochrones_'+profile+'.csv', mode)
-	
-	if mode == "w":
-		file.write('city_code;id;contour;profile;station_id;geometry\n')
-
-	for index, row in points.iterrows():
-		iso = get_iso(profile, row['longitude'],row['latitude'],times)
-		features = iso["features"]
-		
-		for i, f in enumerate(features):
-			contour = str(f["properties"]["contour"])
-			station_id = row["id"]
-			id = city_code+"-"+station_id+"-"+profile+"-"+contour
-			geometry = json.dumps(f["geometry"], separators=(',',':'))
-
-			str_out = city_code+";"+id+";"+contour+";"+profile+";"+station_id+";"+geometry+"\n"
-
-			file.write(str_out)
-
-		row_num += 1
-		print("Iso. "+profile+". Generated: "+str(row_num)+" points from "+points_len+" ("+str((row_num)*3)+" isochrones). Last point id: "+str(row["id"]))
-		time.sleep(0.2)
-
-	file.close()
-
-# Функция обрезания линии между двумя точками
-def line_slice(startPt, stopPt, line):
-	coords = list(line.coords)
-	multi_line = MultiPoint(line.coords)
-
-	if line.type == 'LineString':
-		
-		startVertex = nearest_points(multi_line, startPt['geometry'])[0].coords[0]
-		stopVertex = nearest_points(multi_line, stopPt['geometry'])[0].coords[0]
-
-		start_indx = coords.index(startVertex)
-		stop_indx = coords.index(stopVertex)
-
-		ends = []
-		if start_indx <= stop_indx:	
-			ends = [start_indx, stop_indx]
-		else:
-			ends = [stop_indx, start_indx]
-
-		clipCoords = coords[ends[0] : ends[1]+1]
-
-		return LineString(clipCoords)
-
-# Функция обрезания линии по заданной длине
-def line_slice_along(line, startDist, stopDist):
-	coords = []
-	slice = []
-	options = {'units':'kilometers'}
-	# Validation
-
-	if line.type == 'Feature':
-		coords = line.coords
-	elif line.type == 'LineString':
-		coords = line.coords
-
-	origCoordsLength = len(coords)
-	travelled = 0
-	overshot = 0
-	direction = 0
-	interpolated = 0
-
-	for i, coord in enumerate(coords):
-		if startDist >= travelled and i == len(coords) - 1:
-			break
-		elif travelled > startDist and len(slice) == 0:
-			overshot = startDist - travelled
-			if overshot == 0:
-				slice.append(coords[i])
-				return LineString(slice)
-
-			direction = bearing(coords[i], coords[i - 1]) - 180
-			interpolated = turf_dest(coords[i], overshot, direction,options)
-			slice.append(interpolated['geometry']['coordinates'])
-
-		if travelled >= stopDist:
-			overshot = stopDist - travelled
-			if overshot == 0:
-				slice.append(coords[i])
-				return LineString(slice)
-
-			direction = bearing(coords[i], coords[i - 1]) - 180
-			interpolated = turf_dest(coords[i], overshot, direction,options)
-			slice.append(interpolated['geometry']['coordinates'])
-			return LineString(slice)
-
-		if travelled >= startDist:
-			slice.append(coords[i])
-
-		if i == len(coords) - 1:
-			return LineString(slice)
-		
-		travelled += turf_dist.distance(coords[i], coords[i + 1])
-
-	return LineString(coords[coords.length - 1])
-
-# Получение направления одной точки относительно другой в градусах
-def bearing(start, end):
-	coordinates1 = start
-	coordinates2 = end
-
-	lon1 = turf_helpers.degrees_to_radians(coordinates1[0])
-	lon2 = turf_helpers.degrees_to_radians(coordinates2[0])
-	lat1 = turf_helpers.degrees_to_radians(coordinates1[1])
-	lat2 = turf_helpers.degrees_to_radians(coordinates2[1])
-	a = math.sin(lon2 - lon1) * math.cos(lat2)
-	b = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(lon2 - lon1)
-
-	return turf_helpers.radians_to_degrees(math.atan2(a, b))
-
-# Расчёт длины линии в км
-def get_line_length(obj):
-	len_res = 0
-
-	if obj.type == 'LineString':
-		lines = [obj]
-	elif obj.type == 'MultiLineString':
-		lines = obj
-
-	for line in lines:
-		coords = line.coords
-		for i_c, c in enumerate(coords):
-			if i_c+1 < len(coords):
-				len_res += turf_dist.distance(c,coords[i_c+1])
-	return len_res
-
-# Расчёт площади фигуры в кв. м
-def calculateArea(shape_obj):
-	total = 0
-
-	geom_type = shape_obj.geom_type
-
-	if geom_type == 'Polygon':
-		total = polygonArea(shape_obj)
-	elif geom_type == 'MultiPolygon':
-		for obj in shape_obj:
-			total += polygonArea(obj)
-	return total
-
-# Расчёт площади полигона
-def polygonArea(shape_obj):
-	total = 0
-
-	total += abs(ringArea(shape_obj.exterior.coords))
-
-	for i in shape_obj.interiors:
-			total -= abs(ringArea(i.coords))
-
-	return total
-
-# Расчёт площади по формуле turf.js
-def ringArea(coords):
-	#print(len(coords))
-	RADIUS = 6378137 #earthRadius
-	total = 0
-	p1 = 0
-	p2 = 0
-	p3 = 0
-	lowerIndex = 0
-	middleIndex = 0
-	upperIndex = 0
-	coordsLength = len(coords)
-
-	if coordsLength > 2:
-		for i in range(0, coordsLength):
-			if i == coordsLength - 2: # i = N-2
-				lowerIndex = coordsLength - 2
-				middleIndex = coordsLength - 1
-				upperIndex = 0
-			elif i == coordsLength - 1: # i = N-1
-				lowerIndex = coordsLength - 1
-				middleIndex = 0
-				upperIndex = 1
-			else: # i = 0 to N-3
-				lowerIndex = i
-				middleIndex = i + 1
-				upperIndex = i + 2
-			
-			p1 = coords[lowerIndex]
-			p2 = coords[middleIndex]
-			p3 = coords[upperIndex]
-			total += (rad(p3[0]) - rad(p1[0])) * math.sin(rad(p2[1]))
-		
-		total = total * RADIUS * RADIUS / 2
-	return total
-
-def rad(num):
-	return num * math.pi / 180
-
-def deduplicate(list):
-	new_list = []
-	for item in list:
-		if item not in  new_list:
-			new_list.append(item)
-	return new_list
-
-# Функция для нахождения соседних остановок в радиусе пешего 5-ти минутного изохрона
-def generate_station_neighbors():
-
-	print("Start function generate_station_neighbors: ", datetime.now())
-
-	stations = read_stations() #.query('id == "6052394926421880"')
-	stations = geopandas.GeoDataFrame(stations)
-
-	# Пешие изохроны 5-ти минутные
-	walk_iso = read_walk_iso()
-
-	station_neighbors = pandas.DataFrame(columns=['station_id','neighbor_ids'])
-	st_len = len(stations)
-
-	for i_s, station in stations.iterrows():
-		print(str(i_s)+" from "+str(st_len)+" last: "+str(station['id']))
-		station_id = station['id']
-		iso = walk_iso.query('station_id == @station_id')
-		
-		if len(iso) > 0:
-			iso = iso.iloc[0]
-			geometry = iso['geometry']
-			if not(geometry == None or geometry.is_empty == True):
-				bounds = geometry.bounds
-				in_bounds = stations.cx[bounds[0]:bounds[2], bounds[1]:bounds[3]]
-
-				if len(in_bounds) > 0:
-					in_bounds['in_polygon_flag'] = in_bounds.apply(lambda p: p['geometry'].within(geometry), axis=1)
-					in_polygon = in_bounds.query('in_polygon_flag == True and id != @station_id')
-
-					neighbors = in_polygon['id'].tolist()
-
-					lnk_station = {
-						'station_id': station_id,
-						'neighbor_ids': neighbors
-					}
-
-					station_neighbors = station_neighbors.append(lnk_station, ignore_index=True)
-	
-	station_neighbors['neighbor_ids'] = station_neighbors['neighbor_ids'].apply(lambda x: json.dumps(x))
-	station_neighbors.to_csv('../out/station_neighbors/station_neighbors.csv',sep=";", columns=['station_id','neighbor_ids'])
-	print("Finish function generate_station_neighbors: ", datetime.now())
-
-
-# Генерация изохронов для ОТ
-def generate_isochrones_public_transport(stops_in, part, times, with_interval,with_changes):
-	# stops_in DataFrame - спсиок остановок, для которых нужно рассчитать изохроны
-	# part  String - номер части общего списка остановок (при параллельном расчёте)
-	# times '10,20,30' - Время изохронов, для которых нужно сделать расчёт
-	# with_interval "1" - да / "0" - нет - учитывать или нет интервалы
-	# with_changes "1" - да / "0" - нет - учитывать или нет пересадки
-
-	stops = read_stations()
-	routes = read_routes()
-	route2stops = read_route2stops()
-	walk_iso = read_walk_iso()
-
-	if with_changes == "1":
-		neighbors = pandas.read_csv('../out/station_neighbors/station_neighbors.csv', sep=";")
-	else: 
-		neighbors = []
-
-	if with_interval == "1" and os.path.exists('../in/intervals/intervals.csv') == True:
-		intervals = pandas.read_csv('../in/intervals/intervals.csv', sep=";")
-	else:
-		intervals = []
-
-	public_isochrones =[]
-
-	file_out = open("../out/isochrones/public_transport/tmp/isochrones_public_transport_int"+with_interval+"_wch"+with_changes+"_p"+part+".csv", 'w')
-	file_out.write('city_code;id;contour;profile;station_id;with_interval;with_changes;geometry;properties\n')
-
-	ind = 0
-	stop_in_cnt = len(stops_in)
-
-	for i_s, stop in stops_in.iterrows():
-		ind +=1
-		print("Iso. Public Transport. Proc: "+part+". Stop: "+str(ind)+" from: "+str(stop_in_cnt)+". Last stop ID: "+str(stop['id']))
-		
-		# Массив остановок изохронов
-		connected_stops = get_stops_on_route_inside_isochrone(stop, route2stops, [], intervals, with_interval, times, [],0)
-
-		# Добавляем связанные остановки с учётом пересадок
-		if with_changes == "1":
-			cp = copy.deepcopy(connected_stops)
-			for c in cp: 
-				cur_routes = stop['route_numbers']
-				items = c['items']
-				for i, item in enumerate(items):
-					id = item['id']
-					distance = item['distance']
-
-					# Находим связанные остановки для пересадочных маршрутов без смены остановки
-					con_stop = stops.query('id == @id').iloc[0]
-					connected_stops = get_stops_on_route_inside_isochrone(con_stop, route2stops, cur_routes, intervals, with_interval, c['contour'], connected_stops, distance)
-					route_nums = con_stop['route_numbers']
-					cur_routes = list(set(route_nums + cur_routes))
-
-					# Находим связанные остановки для пересадочних маршрутов со сменой остановки (соседние остановки)
-					filtered_neibs = neighbors.query('station_id == @id')['neighbor_ids']
-					if len(filtered_neibs) > 0:
-						filtered_neibs = json.loads(filtered_neibs.iloc[0])
-						for n_id in filtered_neibs:
-							neib_stop = stops.query('id == @n_id').iloc[0]
-							connected_stops = get_stops_on_route_inside_isochrone(neib_stop, route2stops, cur_routes, intervals, with_interval, c['contour'], connected_stops, distance+5)
-							
-							route_nums = neib_stop['route_numbers']
-							cur_routes = list(set(route_nums + cur_routes))
-		
-		# Находим пешие изохроны для остановок, чтобы построить из них автобусные и записываем в файл
-		for c in connected_stops: 
-			#print(c)
-			ids = c['ids']
-			route_codes = c['routes']
-			properties = {'stop_ids': ids, 'routes': route_codes}
-			iso = walk_iso.query('station_id in @ids and geometry != None')['geometry'].tolist()
-			#iso = list(map(lambda x: asPolygon(np.array(json.loads(x))), iso))
-			union = unary_union(iso)
-
-			id = city_code+'-'+str(stop['id'])+'-public_transport-'+str(c['contour']+'-'+with_interval+'-'+with_changes)
-			geometry = json.dumps(shapely.geometry.mapping(union), separators=(',',':'))
-			str_out = city_code+";"+id+";"+str(c['contour'])+";"+"public_transport"+";"+str(stop['id'])+";"+with_interval+";"+with_changes+";"+geometry+";"+json.dumps(properties,ensure_ascii=False)+"\n"
-
-			file_out.write(str_out)
-
-	file_out.close()
-
-# Находим остановки на пути выбранных маршрутов внутри изохрона
-def get_stops_on_route_inside_isochrone(station, route2stops, cur_routes, intervals, with_interval, times, connected_stops, dist_from_start_point):
-
-	# Определяем маршруты и направления, в которых учиствует выбранная остановка
-	station_id = station['id']
-	routes = route2stops.query('station_id == @station_id and route_code not in @cur_routes')
-
-	# Запускаем цикл по каждому маршруту для определения остановок внутри ихохрона
-	for i_r, route in routes.iterrows():
-		
-		route_id = route['route_id']
-		route_code = route['route_code']
-		seq_no = route['seq_no']
-		track_no = route['track_no']
-
-		# Определяем параметры верменных контуров изохронов
-		if with_interval == "1":
-			if len(intervals) > 0:
-				interval_list = intervals.query('route_code == @route_code')['avg_fact_interval'].tolist()
-				if len(interval_list) == 0:
-					interval = default_interval/2
-				else:
-					interval = round(int(interval_list[0])/2)
-			else:
-				interval = default_interval/2
-		else:
-			interval = 0
-			
-		times_array = list(map(lambda t: {"time":t, "t_modif": int(t) - interval - dist_from_start_point }, times.split(',')))
-
-		# Параметры для цикла
-		route_time = 0
-		breaks = []
-
-		# Находим все остановки на направлении маршрута дальше выбранной остановки
-		for i_s, r2s in route2stops.query('route_id == @route_id and track_no == @track_no and seq_no >= @seq_no').iterrows():
-			
-			route_time += r2s['route_time']
-			stop_id = r2s['station_id']
-			item = {'id':stop_id, 'distance':route_time}
-
-			for t in times_array:
-
-				if route_time <= t['t_modif']:
-					contour = [c for c in connected_stops if c['contour'] == t['time']]
-
-					# Добавляем ID остановок каждого контура в свой массив
-					if contour == []:
-						connected_stops.append({'contour':t['time'], 'ids':[stop_id], 'items':[item], 'routes':[route_code]})
-					else:
-						contour = contour[0]
-
-						contour['ids'] = list(set(contour['ids'] + [stop_id]))
-						contour['routes'] = list(set(contour['routes'] + [route_code]))
-						if dist_from_start_point == 0:
-							contour['items'] = deduplicate(contour['items'] + [item])
-				else:
-					breaks.append(t['time'])
-					breaks = list(set(breaks))
-
-			if len(breaks) == len(times_array):
-				break
-	return connected_stops
-
-# Функция генерации метрик для изохронов
-def generate_isohrone_metrics(isochrone_df, profile, part):
-	# Файл для записи результата работы функции
-	file_out = open("../out/metrics/tmp/metrics_"+profile+"_"+part+".csv", "w")
-	file_out.write("metric_code;isochrone_code;metric_value\n")
-
-	# Загружаем в DataFrame-ы источники данных
-	df_sources = []
-	for f in glob.glob("../in/objects/*.csv"):
-		df_sources.append(geopandas.read_file("out/"+f+"/"+f+".geojson"))
-
-	df_len = len(isochrone_df)
-	ind = 0
-
-	# Выполняем расчёт метрик для каждого изохрона
-	for i, row in isochrone_df.iterrows():
-		ind += 1
-		iso_id = row['id']
-		print("Metrics. "+profile+". Part: "+str(part)+". Row: "+str(ind)+" from: "+str(df_len)+". Last: "+iso_id)
-		geom = shape(json.loads(row['geometry']))
-		bounds = geom.bounds
-
-		if len(bounds) > 0:
-			# Площадь изохрона
-			isochrone_area = round(calculateArea(geom)/1000000,2)
-			file_out.write("isochrone_area;"+iso_id+";"+str(isochrone_area)+"\n")
-			
-			# Метрики из списка метрик
-			for s in df_sources:
-				info = get_objects_inside_info(s,bounds,geom)
-				if info["cnt"] > 0:
-					file_out.write(s+"_cnt;"+iso_id+";"+str(info["cnt"])+"\n")
-				if info["population"] > 0:
-					file_out.write(s+"_population;"+iso_id+";"+str(info["population"])+"\n")
-
-	file_out.close()
-	
-def get_objects_inside_info(df,bounds,geometry):
-	#print(bounds)
-	#print(df)
-	in_bounds = df.cx[bounds[0]:bounds[2], bounds[1]:bounds[3]]
-
-	if len(in_bounds) > 0:
-		in_bounds['in_polygon_flag'] = in_bounds.apply(lambda p: p['geometry'].within(geometry), axis=1)
-		in_polygon = in_bounds.query('in_polygon_flag == True')
-		points_cnt = len(in_polygon)
-		population = in_polygon['population'].agg('sum')
-	else:
-		points_cnt = 0
-		population = 0
-	return {"cnt":points_cnt, "population":population}
-
-# Расчёт данных для зоны покрытия остановок
-def get_stops_cover_iso():
-	print("Start get_stops_area_iso")
-
-	iso_list = []
-
-	with open('../out/isochrones/isochrones_walking.csv', 'r') as read_obj:
-		reader = DictReader(read_obj, delimiter=';')
-		for row in reader:
-			if row['contour'] == '5':
-				geometry = shape(json.loads(row['geometry']))
-				iso_list.append(geometry)
-	
-	iso_union = unary_union(iso_list)
-	iso_json = json.dumps(geopandas.GeoSeries([iso_union]).__geo_interface__, separators=(',',':'))
-
-	file_out = open('../out/isochrones/geojson/isochrones_stops_cover.geojson', 'w')
-	file_out.write(iso_json)
-	file_out.close()
-
-	# Формироуем векторный файл
-	#os.system("tippecanoe -zg -o ../out/isochrones/mbtiles/"+city_code+"-stops_cover.mbtiles -l 'stops_cover' -f ../out/isochrones/geojson/isochrones_stops_cover.geojson")
-
-	print("Finish get_stops_area_iso")
-
-
-# Запуск расчёта изохронов в многопоточном режиме
-def run_public_transport_in_threads(df, times, with_interval, with_changes):
-	print("Start gen iso public_transport. With interval: "+with_interval+" with_changes: "+with_changes+". Time:",datetime.now())
-	df_split = np.array_split(df, threads_num)
-	processes = []
-	for i in range(0,threads_num):
-	    print("Iso Public transport. Part: "+str(i+1)+" len: "+str(len(df_split[i])))
-	    p = multiprocessing.Process(target=generate_isochrones_public_transport, args=(df_split[i], str(i+1), times, with_interval, with_changes))
-	    processes.append(p)
-	    p.start()
-	
-	for process in processes:
-		process.join()
-
-	out_files = glob.glob("../out/isochrones/public_transport/tmp/*.csv")
-	out_df = pandas.DataFrame()
-	for file_name in out_files:
-	 	out_df = out_df.append(pandas.read_csv(file_name, sep=";"), sort=False)
-	 	os.remove(file_name)
-
-	out_df.to_csv("../out/isochrones/public_transport/isochrones_public_transport_int"+with_interval+"_wch"+with_changes+".csv", sep=";")
-
-	print("Finish gen iso public_transport. With interval: "+with_interval+" with_changes: "+with_changes+". Time:",datetime.now())
-
-# Запуск расчёта метрик в многопоточном режиме
-def run_metrics_in_threads(df, profile):
-	print("Start gen metrics for: "+profile+". Time:",datetime.now())
-	df_split = np.array_split(df, threads_num)
-	processes = []
-	for i in range(0,threads_num):
-		print("Metrics. Part: "+str(i+1)+" len: "+str(len(df_split[i])))
-		p = multiprocessing.Process(target=generate_isohrone_metrics, args=(df_split[i], profile, str(i+1)))
-		processes.append(p)
-		p.start()
-
-	for process in processes:
-		process.join()
-
-	out_files = glob.glob("../out/metrics/tmp/*.csv")
-	out_df = pandas.DataFrame()
-	for file_name in out_files:
-	 	out_df = out_df.append(pandas.read_csv(file_name, sep=";"), sort=False)
-	 	os.remove(file_name)
-
-	out_df.to_csv("../out/metrics/metrics_"+profile+".csv", sep=";")
-	print("Finish gen metrics for: "+profile+". Time:",datetime.now())
-
-# Функция генерации слоя плотости маршрутов
+# Функция генерации слоя плотности маршрутов
 def generate_route_density():
 	print("Start generate_route_density. Time:",datetime.now())
 	routes_file = open("../out/routes/geojson/routes.geojson","r")
@@ -957,7 +344,6 @@ def generate_route_density():
 	# Словарь для хранения простых частей маршрутов и подсчёта плотности
 	lines_dict = []
 
-	t1 = time.perf_counter()
 	for route in routes['features']:
 		route_code = route['properties']['route_code']
 		print("density, route_code: ",route_code)
@@ -998,237 +384,221 @@ def generate_route_density():
 		features.append(f)
 
 	# Выгружаем в geojson
+	os.system("mkdir ../out/density")
 	geopandas.GeoDataFrame(features).to_file("../out/density/routes_density.geojson", driver='GeoJSON')
 	
-	t2 = time.perf_counter()
-	print(f"{t2 - t1:0.4f}")
 	routes_file.close()
 
 	print("Finish generate_route_density. Time:",datetime.now())
 
 
-# Блок функций для создания TileSet-ов
-# Запуск внешних команд	
-def run_cmd(cmd):
-	os.system(cmd+" --token "+mbSecretToken+" > result")
-	message = open('result','r').read()
-	print(message)
-	return message
+# Функция расчёта слоя Расстояние между остановками
+def calculate_stops_distance():
+	routes_file = open("../out/routes/geojson/routes.geojson")
+	routes = json.load(routes_file)['features']
 
-# Загружаем на сервер source для tileset
-def upload_tile_source(layer_name, source_url):
-	cmd = "tilesets upload-source "+userName+" "+city_code+"-"+layer_name+" "+source_url+" --replace"
-	os.system(cmd+" --token "+mbSecretToken+" > result") 
-	res_str = open('result','r').read()
-	if res_str != "":
-		result = json.loads(res_str)
-		return result['id']
-	else:
-		return res_str
+	route2stops_file = open('../out/route2stops/route2stops.csv')
+	route2stops = DictReader(route2stops_file,delimiter=";")
 
-# Записываем рецепт в файл
-def write_tile_recipe(source_id, layer_name):
-	recip = {
-		"version": 1,
-		"layers": {
-			layer_name: {
-				"source": source_id,
-				"minzoom": 4,
-				"maxzoom": 16
-			}
-		}
-	}
-	file_out = open("recipe.json","w")
-	file_out.write(json.dumps(recip))
-	file_out.close()
+	stations_file = open('../out/stations/geojson/stations.geojson')
+	stations = json.load(stations_file)['features']
 
-# Проверка статуса очереди
-def check_queue_status():
-	print("Checking for tilests queue status:")
-	for layer_name in tiles_queue:
-		tile_id = userName+"."+city_code+"-"+layer_name
-		cmd = "tilesets status "+tile_id
-		status = json.loads(run_cmd(cmd))['status']
+	# Список фичей с сегментами маршрутов
+	features = []
+	
+	# Первую станицию считаем отдельно
+	r2s = next(route2stops)
+	st_from_id = r2s['station_id']
+	st_from = next(x for x in stations if x['properties']['global_id'] == st_from_id)
+	st_from_geom = {'geometry': shape(st_from['geometry'])}
+	st_from_route = r2s['route_id']
+	st_from_track_no = int(r2s['track_no'])
+
+	# Маршрут
+	route_geom = next(x for x in routes if x['properties']['ID'] == st_from_route)['geometry']['coordinates']
+	track_geom = shape({"type": "LineString", "coordinates":route_geom[st_from_track_no-1]})
+	#print(route_geom)
+
+	# Проходим в цикле по всем связям остановок с маршрутами
+	for r2s in route2stops:
+		#print(r2s['route_id'])
+
+		# Получаем данные по следующей остановке
+		st_to_id = r2s['station_id']
+		st_to = next(x for x in stations if x['properties']['global_id'] == st_to_id)
+		st_to_geom = {'geometry': shape(st_to['geometry'])}
+		st_to_route = r2s['route_id']
+		st_to_track_no = int(r2s['track_no'])
 		
-		if status == 'success':
-			tiles_queue.remove(layer_name)
+		# Вычисляем были такой сегмент уже в расчёте
+		#seg_not_exists = next((x for x in features if st_from_id in x['station_ids'] and st_to_id in x['station_ids']),None) == None
+		seg_not_exists = next((x for x in features if st_from_id+'-'+st_to_id in x['station_ids']),None) == None
+		
+		# Если остановки на одном маршруте, выполняем расчёт расстояния между ними
+		if st_from_route == st_to_route and seg_not_exists == True:
+			#Проверяем, что остановки на одном направлении
+			if st_from_track_no == st_to_track_no:
 
-	if len(tiles_queue) < 2:
-		return 'OK'
-	else:
-		print("No available queue for tileset. Waiting 60 sec...")
-		return 'WAIT'
+				route_seg = turf.line_slice(st_from_geom, st_to_geom, track_geom)
+				route_len = round(turf.get_line_length(route_seg)*1000)
+				
+				if route_len > 0:
+					feature = {
+						'station_ids':st_from_id+'-'+st_to_id,
+						'station_from': st_from['properties']['StationName'],
+						'station_to':st_to['properties']['StationName'],
+						'distance': route_len,
+						'geometry': route_seg
+					}
 
-
-# Создаём tileset
-def create_tileset(layer_name):
-	# Ждём, когда освободится очередь на загрузку
-	while True:
-		if check_queue_status() == 'OK':
-			break
+					features.append(feature)
+			else:
+				track_geom = shape({"type": "LineString", "coordinates":route_geom[st_to_track_no-1]})
+		# Если сменился маршрут, то получаем данные по новому маршруту
 		else:
-			time.sleep(60)
+			route_geom = next(x for x in routes if x['properties']['ID'] == st_to_route)['geometry']['coordinates']
+			track_geom = shape({"type": "LineString", "coordinates":route_geom[st_to_track_no-1]})
 
-	# Создаём tileset
-	tile_id = userName+"."+city_code+"-"+layer_name
-	create_cmd = "tilesets create "+tile_id+" --recipe recipe.json --name "+city_code+"-"+layer_name
-	result = run_cmd(create_cmd)
+		# Переопредеяем первую остановку
+		st_from_route = st_to_route
+		st_from_track_no = st_to_track_no
+		st_from_id = st_to_id
+		st_from = st_to
+		st_from_geom = st_to_geom
 
-	# Добавляем в очередь новый слой
-	tiles_queue.append(layer_name)
+	# Закрываем файлы источники
+	routes_file.close()
+	route2stops_file.close()
+	stations_file.close()
 
-	# Удаляем tileset, если такой уже есть
-	if "already exists" in json.loads(result)["message"]:
-		del_cmd = "tilesets delete "+tile_id+" -f"
-		run_cmd(del_cmd)
-		run_cmd(create_cmd)
+	# Записываем результат в файл
+	os.system("mkdir ../out/stops_distance")
+	geopandas.GeoDataFrame(features).to_file("../out/stops_distance/stops_distance.geojson", driver='GeoJSON')
 
-	# Публикуем tileset
-	pub_cmd = "tilesets publish "+tile_id
-	run_cmd(pub_cmd)
-
-	return tile_id
-
-# Создание вектора для слоя с покрытием остановок
-def create_stops_cover_tileset():
-	# Загружаем geojson файл с изохроном на сервер mapbox. Создаём Source
-	source_id = upload_tile_source("stops_cover", "../out/isochrones/geojson/isochrones_stops_cover.geojson")
-	# Создаём рецепт
-	write_tile_recipe(source_id, "stops_cover")
-	# Создаём и публикуем TileSet
-	create_tileset("stops_cover")
-
-# Создание вектора для остановок
-def create_stations_tileset():
-	# Загружаем geojson файл с изохроном на сервер mapbox. Создаём Source
-	source_id = upload_tile_source("bus_stops", "../out/stations/geojson/stations.geojson")
-	# Создаём рецепт
-	write_tile_recipe(source_id, "bus_stops")
-	# Создаём и публикуем TileSet
-	create_tileset("bus_stops")
-
-# Создание вектора для маршрутов
-def create_routes_tileset():
-	# Загружаем geojson файл с изохроном на сервер mapbox. Создаём Source
-	source_id = upload_tile_source("routes", "../out/routes/geojson/routes.geojson")
-	# Создаём рецепт
-	write_tile_recipe(source_id, "routes")
-	# Создаём и публикуем TileSet
-	create_tileset("routes")
-
-# Создание вектора для плотности маршрутов
-def create_routes_density_tileset():
-	# Загружаем geojson файл с изохроном на сервер mapbox. Создаём Source
-	source_id = upload_tile_source("density", "../out/density/routes_density.geojson")
-	# Создаём рецепт
-	write_tile_recipe(source_id, "density")
-	# Создаём и публикуем TileSet
-	create_tileset("density")
 
 
 
 # =========================== 
-print("Start", datetime.now())
+if __name__ == '__main__':
 
-#== Step 1: Загрузка данных по маршрутам и остановкам
+	print("Start", datetime.now())
 
-# Step 1.1: Загрузка маршрутов и остановок
-load_route_and_stations()
+	# Читаем параметры из файла параметров
+	init()
 
-# Step 1.2: Загрузка альтернативных маршрутов
-generate_alternative_routes()
+	#== Step 1: Загрузка данных по маршрутам и остановкам
 
-# Step 1.3: Загрузка доп. информации о маршрутах
-get_routes_attributes()
+	# Step 1.1: Загрузка маршрутов и остановок
+	load_route_and_stations()
+	
+	# Step 1.2: Выгрузка в формат geojson остановок и маршрутов
+	generate_stations_geojson()
+	generate_routes_geojson()
 
-# Step 1.4: Выгрузка geojson для остановок
-generate_stations_geojson()
+	# Step 1.4: Загрузка данных в БД
+	postgres.upload_city()
+	postgres.upload_stations(city_code)
+	postgres.upload_routes(city_code)
+	postgres.upload_lnk_station_routes(city_code)
 
-# Step 1.5: Выгрузка geojson для маршрутов
-generate_routes_geojson()
-
-
-#== Step 2: Load isochrones
-stations = read_stations() #.query('id == "5067232480591909"')
-
-# Step 2.1: Load Walking isochrones
-generate_isochrones("walking", stations, "w", "5,10,20,30")
-
-# Step 2.2: Load Cycling isochrones
-generate_isochrones("cycling", stations, "w", "10,20,30")
-
-# Step 2.3: Load Driving isochrones
-generate_isochrones("driving", stations, "w", "10,20,30")
-
-# Step 2.4: Загружаем изохроны Public transport
-
-# Step 2.4.1: Изохроны без интервалов и пересадок
-run_public_transport_in_threads(stations, "10,20,30", "0", "0")
-
-# Step 2.4.2: Находим соседние остановки для всех остановок
-generate_station_neighbors()
-
-# Step 2.4.3: Изохроны без интервалов, но с пересадками
-run_public_transport_in_threads(stations, "10,20,30", "0", "1")
-
-# Step 2.4.4: Изохроны с интервалами, но без пересадок
-if (os.path.exists('../in/intervals/intervals.csv')) or (math.isnan(default_interval) == False and default_interval != 0):
-	run_public_transport_in_threads(stations, "10,20,30", "1", "0")
-
-# Step 2.4.5: Изохроны с интервалами и с пересадками
-if (os.path.exists('../in/intervals/intervals.csv')) or (math.isnan(default_interval) == False and default_interval != 0):
-	run_public_transport_in_threads(stations, "10,20,30", "1", "1")
-
-# Step 2.4.6: Загрузка изохронов маршрутов
-generate_route_isochrones()
-
-#== Step 3: Загрузка метрик
-
-# Step 3.1: Загрузка метрик для пеших изохронов
-iso_df = pandas.read_csv("../out/isochrones/isochrones_walking.csv", sep=";")
-run_metrics_in_threads(iso_df, "walking")
-
-# Step 3.2: Загрузка метрик для велосипедных изохронов
-iso_df = pandas.read_csv("../out/isochrones/isochrones_cycling.csv", sep=";")
-run_metrics_in_threads(iso_df, "cycling")
-
-# Step 3.3: Загрузка метрик для автомобильных изохронов
-iso_df = pandas.read_csv("../out/isochrones/isochrones_driving.csv", sep=";")
-run_metrics_in_threads(iso_df, "driving")
-
-# Step 3.4: Загрузка метрик для изохронов ОТ
-
-isochrone_files = glob.glob("../out/isochrones/public_transport/*.csv")
-
-for i, file_name in enumerate(isochrone_files):
-	iso_df = pandas.read_csv(file_name, sep=";")
-	run_metrics_in_threads(iso_df, "public_transport-"+str(i+1))
+	# Step 1.5: Создание векторых файлов
+	mapbox.create_stations_tileset(city_code)
+	mapbox.create_routes_tileset(city_code)
 
 
-#== Step 4: Создание векторных файлов
+	#== Step 2: Load isochrones
+	stations = read_stations()
+	isochrones.init()
+	# Step 2.1: Запуск загрузки изохронов
+	isochrones.generate_isochrones(city_code, "walking", stations, "w", "5,10,20,30")
+	isochrones.generate_isochrones(city_code, "cycling", stations, "w", "10,20,30")
+	isochrones.generate_isochrones(city_code, "driving", stations, "w", "10,20,30")
+	isochrones.run_public_transport(stations)
+	isochrones.generate_route_isochrones()
+	isochrones.get_stops_cover_iso()
 
-# Step 4.1: Создание вектора для слоя с покрытием остановок
+	# Step 2.2: Загрузка изохронов в БД
+	postgres.upload_isochrones(city_code, "walking")
+	postgres.upload_isochrones(city_code, "cycling")
+	postgres.upload_isochrones(city_code, "driving")
+	postgres.upload_isochrones(city_code, "public_transport")
+	postgres.upload_isochrones(city_code, "route_cover")
 
-# Step 4.1.1:Создаём объединённый изохрон по всем остановкам
-get_stops_cover_iso()
-
-# Step 4.1.2:Создаём вектор для покрытия остановками
-create_stops_cover_tileset()
-
-
-# Step 4.2: Создание вектора для остановок
-create_stations_tileset()
-
-# Step 4.3: Создание вектора для маршрутов
-create_routes_tileset()
+	# Step 2.3: Создаём вектор для покрытия остановками
+	mapbox.create_stops_cover_tileset(city_code)
 
 
-# Step 4.4: Создание вектора для плотности маршрутов
+	#== Step 3: Расчёт плотности маршрутов
+	generate_route_density()
+	# Создаём вектор с плотностью
+	mapbox.create_routes_density_tileset(city_code)
 
-# Step 4.1.1: Создаём geoJson с плотностью
-generate_route_density()
 
-# Step 4.1.2: Создаём вуктор с плотностью
-create_routes_density_tileset()
+	#== Step 4: Расчёт расстояний между остановками
+	calculate_stops_distance()
+	# Создание вектора с расстояними между остановками
+	mapbox.create_stops_distance_tileset(city_code)
 
-print("Finish", datetime.now())
+
+	#== Step 5.1: Загрузка домов c реформы ЖКХ
+	# Конвертируем файл в geoJson и добавляем координаты домов
+	reforma.get_city_houses(city_code,city_name,region_name)
+	
+	# # Step 5.2: Расчёт домов далеко от остановок
+	reforma.get_houses_far_from_stops()
+	mapbox.create_houses_far_stops_tileset(city_code)
+	postgres.upload_houses(city_code)
+
+
+	# Step 6: Загрузка слоя с ДТП
+	dtp.download_dtp(city_code,region_name)
+	mapbox.create_dtp_map_tileset(city_code)
+
+	# Загрузка очагов ДТП
+	dtp.download_dtp_ochagi(city_code,region_name)
+	mapbox.run_create_tileset(city_code,"dtp_ochagi")
+
+	# Загрузка камер
+	scraper.download_traffic_cameras(city_code,region_name)
+	mapbox.run_create_tileset(city_code,"traffic_cameras")
+
+
+	#== Step 7: Загрузка метрик
+
+	# Step 7.1: Загрузка метрик для изохронов
+	metrics.run_isochrone_metrics_in_threads("walking",threads_num)
+	metrics.run_isochrone_metrics_in_threads("cycling",threads_num)
+	metrics.run_isochrone_metrics_in_threads("driving",threads_num)
+	metrics.run_isochrone_metrics_in_threads("public_transport",threads_num)
+	metrics.run_isochrone_metrics_in_threads("route_cover",threads_num)
+
+	# Step 7.2: Загрузка метрик для остановок
+	metrics.generate_station_metrics(default_interval)
+
+	# Step 7.3: Загрузка метрик для маршрутов
+	generate_alternative_routes()
+	metrics.generate_route_metrics(default_interval=10)
+
+	# Step 7.4: Загрузка метрик для города 
+	metrics.generate_city_metrics()
+
+	# Step 7.5: Загрузка метрик в БД
+	postgres.upload_metrics("walking")
+	postgres.upload_metrics("cycling")
+	postgres.upload_metrics("driving")
+	postgres.upload_metrics("public_transport")
+	postgres.upload_metrics("route_cover")
+	postgres.upload_station_metrics()
+	postgres.upload_route_metrics()
+	postgres.upload_city_metrics()
+
+	# 8. Добавляем папки IN и OUT в zip архив
+	os.system("cd ..; zip -r "+city_code+"_IN in")
+	os.system("cd ..; zip -r "+city_code+"_OUT out")
+
+	# 9. Перемещаем zip файлы в архив
+	os.system("cd "+arch_dir+"; mkdir "+city_code)
+	os.system("mv ../"+city_code+"_IN.zip "+arch_dir+"/"+city_code+"/")
+	os.system("mv ../"+city_code+"_OUT.zip "+arch_dir+"/"+city_code+"/")
+
+	print("Finish", datetime.now())

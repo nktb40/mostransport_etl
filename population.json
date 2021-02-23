@@ -1,0 +1,145 @@
+[
+  {"city_code":"BEL",
+    "population":394142,
+    "area":153.1},
+
+  {"city_code":"CHB",
+    "population":497618,
+    "area":251},
+
+  {"city_code":"CHLB",
+    "population":1196680,
+    "area":500},
+
+  {"city_code":"EKT",
+    "population":1493749,
+    "area":468},
+
+  {"city_code":"IRK",
+    "population":623562,
+    "area":277},
+
+  {"city_code":"IZH",
+    "population":648146,
+    "area":315.15},
+
+  {"city_code":"KAZ",
+    "population":1257391,
+    "area":589},
+
+  {"city_code":"KEM",
+    "population":556382,
+    "area":294.8},
+
+  {"city_code":"KIR",
+    "population":518348,
+    "area":169.73},
+
+  {"city_code":"KRD",
+    "population":932629,
+    "area":294.908},
+
+  {"city_code":"KRS",
+    "population":1093771,
+    "area":379.5},
+
+  {"city_code":"MNK",
+    "population":287847,
+    "area":154.4},
+
+  {"city_code":"NNG",
+    "population":1252236,
+    "area":410.68},
+
+  {"city_code":"NSK",
+    "population":1625631,
+    "area":502.7},
+
+  {"city_code":"NZV",
+    "population":277668,
+    "area":271.32},
+
+  {"city_code":"OMS",
+    "population":1154507,
+    "area":566.9},
+
+  {"city_code":"PEZ",
+    "population":520300,
+    "area":290.3},
+
+  {"city_code":"PRM",
+    "population":1055397,
+    "area":799.68},
+
+  {"city_code":"SAM",
+    "population":1156659,
+    "area":541.4},
+
+  {"city_code":"SPB",
+    "population":5388759,
+    "area":1439},
+
+  {"city_code":"SRV",
+    "population":838042,
+    "area":394},
+
+  {"city_code":"TSK",
+    "population":576624,
+    "area":294.6},
+
+  {"city_code":"TUL",
+    "population":475161,
+    "area":145.8},
+
+  {"city_code":"TYM",
+    "population":807400,
+    "area":698},
+
+  {"city_code":"UFA",
+    "population":1128787,
+    "area":708},
+
+  {"city_code":"USH",
+    "population":200636,
+    "area":164.66},
+
+  {"city_code":"VLD",
+    "population":356937,
+    "area":137.14},
+
+  {"city_code":"VLG",
+    "population":1008998,
+    "area":859.353},
+
+  {"city_code":"VNO",
+    "population":224936,
+    "area":90.08},
+
+  {"city_code":"VOJ",
+    "population":1058261,
+    "area":596.51},
+
+  {"city_code":"YKT",
+    "population":322987,
+    "area":122},
+
+  {"city_code":"VDK",
+    "population":606561,
+    "area":331.16},
+
+  {"city_code":"IVN",
+    "population":404598,
+    "area":104.84},
+
+  {"city_code":"KUR",
+    "population":452976,
+    "area":208.2},
+
+  {"city_code":"STV",
+    "population":450680,
+    "area":171.7},
+
+  {"city_code":"CHPV",
+    "population":314834,
+    "area":122}
+]
