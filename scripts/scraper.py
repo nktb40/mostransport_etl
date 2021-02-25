@@ -98,7 +98,7 @@ def download_houses_file(reg_name):
 	
 	# Выбираем необходимый регион
 	regions = driver.find_elements_by_css_selector('#panel2 .dropdown .dropdown-menu .inner ul li a')
-	next(x for x in regions if reg_name.lower() in x.find_element_by_class_name('text').text.lower()).click()
+	next(x for x in regions if x.find_element_by_class_name('text').text.lower().startswith(reg_name.lower())).click()
 	
 	# Скачиваем архив
 	form_results = driver.find_element_by_css_selector('#opendata-form section .container')

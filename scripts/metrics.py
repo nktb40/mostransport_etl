@@ -9,6 +9,7 @@ from datetime import datetime
 import shapely
 from shapely.geometry import *
 from functools import reduce
+from datetime import datetime
 
 # Переменная для хранения врменных результатов работы в многопоточном режиме
 results = []
@@ -18,10 +19,28 @@ results = []
 def get_objects_inside_info(source,geometry):
 	# Список объектов, которые попали в изохрон
 	in_polygon = []
+
 	# Проходимся по списку объектов и проверяем гаходится ли он в границах
+	multipoint_list = []
 	for point in source:
-		if shape(point['geometry']).within(geometry):
-			in_polygon.append(point)
+		point_geo = shape(point['geometry']) if len(point['geometry']['coordinates']) > 0 else None
+		if point_geo != None:
+			multipoint_list.append(point_geo)
+
+	mp = MultiPoint(multipoint_list)
+	res = mp.intersection(geometry)
+
+	if res.is_empty == False:
+		if res.geom_type == 'Point':
+			res_list = [[res.x,res.y]]
+		else:
+			res_list = list(map(lambda p: [p.x,p.y],list(res)))
+
+		for point in source:
+			point_geo = point['geometry']['coordinates']
+			if len(point_geo) > 0:
+				if point_geo in res_list:
+					in_polygon.append(point)
 
 	# считает кол-во точек, которые попали в изохрон
 	points_cnt = len(in_polygon)
@@ -59,6 +78,10 @@ def generate_isohrone_metrics(isochrones, profile, part):
 
 			# Геометрия изохрона
 			geom = shape(json.loads(row['geometry']))
+
+			# Если имеются пересечения в полигоне, то заменяем его на буфер вокруг него, чтобы убрать пересечения
+			if geom.is_valid == False:
+				geom = geom.buffer(0)
 
 			# Считаем площадь изохрона
 			isochrone_area = round(turf.calculateArea(geom)/1000000,2)
@@ -486,9 +509,22 @@ if __name__ == '__main__':
 	#run_isochrone_metrics_in_threads("route_cover",6)
 	#generate_station_metrics(default_interval=10)
 	#generate_route_metrics(default_interval=10)
-	generate_city_metrics()
+	#generate_city_metrics()
 
 	#with open("../out/metrics/metrics_public_transport.csv","r") as file:
 	#	reader = csv.DictReader(file, delimiter=';')
 	#	for row in reader:
 	#		print(row)
+
+	#run_isochrone_metrics_in_threads("walking",1)
+
+	# with open("../out/isochrones/isochrones_driving.csv","r") as file:
+	# 	reader = csv.DictReader(file, delimiter=';')
+	# 	isochrones = []
+	# 	for row in reader:
+	# 		isochrones.append(row) 
+	# 	#print(len(isochrones))
+	# 	start = datetime.now()
+	# 	generate_isohrone_metrics(isochrones[:100], 'driving', 1)
+	# 	finish = datetime.now()
+	# 	print("Done in ",finish-start)

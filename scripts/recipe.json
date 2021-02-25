@@ -1,1 +1,1 @@
-{"version": 1, "layers": {"traffic_cameras": {"source": "mapbox://tileset-source/nktb/CHPV-dtp_map", "minzoom": 0, "maxzoom": 13}}}
+{"version": 1, "layers": {"houses_far_stops": {"source": "mapbox://tileset-source/nktb/OMS-houses", "minzoom": 0, "maxzoom": 13}}}

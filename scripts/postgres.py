@@ -445,7 +445,7 @@ def upload_layer(city_code,layer_type_code):
 if __name__ == '__main__':
 	
 	print("Begin postgres")
-	#upload_houses('PSK')
+	#upload_houses('OMS')
 	#upload_station_metrics()
 	#upload_metrics("route_cover")
 	#upload_station_metrics()

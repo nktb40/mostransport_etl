@@ -30,12 +30,10 @@ def get_city_houses(city_code, city_name, region_name):
 
 	# Считаваем из параметров кол-во жителей
 	with open("../in/params/params.json", 'r') as file:
-		city_params = json.load(file)['population']
+		city_params = json.load(file)
 
 	# Расчитываем жилую площадь на одного жителя
-	area_per_pers = reduce((lambda x, y: x+y), map(lambda x: x['area_residential'], houses_src))
-
-	area_residential = reduce((lambda x, y: x+y), map(lambda x: float(x['area_residential'].replace(',','.')) if ['area_residential'] != '' else 0, houses_src))
+	area_residential = reduce((lambda x, y: x+y), map(lambda x: float(x['area_residential'].replace(',','.')) if x['area_residential'] != '' else 0, houses_src))
 	area_per_pers = round(area_residential/city_params['population'],2)
 
 	# Проходимся по списку домов и выполняем геокодирование
@@ -149,7 +147,6 @@ if __name__ == '__main__':
 	#download_houses_file('Тульская область')
 
 	# Конвертируем файл в geoJson и добавляем координаты домов
-	#get_city_houses("TUL","Тула")
-
-	#get_city_houses('PSK', 'Псков', 'Псковская область')
+	#scraper.download_houses_file('Омская область')
+	#get_city_houses('OMS', 'Омск', 'Омская область')
 	#get_houses_far_from_stops()

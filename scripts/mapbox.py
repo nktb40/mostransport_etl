@@ -234,5 +234,6 @@ if __name__ == '__main__':
 	#run_create_tileset("STV","traffic_cameras")
 
 	#run_create_tileset("NNG","dtp_map")
-	#create_houses_far_stops_tileset('PSK')
-	create_stations_tileset('TUL')
+	#create_stations_tileset('TUL')
+
+	create_houses_far_stops_tileset('OMS')
