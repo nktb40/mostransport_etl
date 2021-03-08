@@ -147,6 +147,6 @@ if __name__ == '__main__':
 	#download_houses_file('Тульская область')
 
 	# Конвертируем файл в geoJson и добавляем координаты домов
-	#scraper.download_houses_file('Омская область')
-	#get_city_houses('OMS', 'Омск', 'Омская область')
+	#scraper.download_houses_file('Нижегородская область')
+	get_city_houses('NNG', 'Нижний Новгород', 'Нижегородская область')
 	#get_houses_far_from_stops()

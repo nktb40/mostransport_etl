@@ -67,24 +67,24 @@ if __name__ == '__main__':
 
 	# Выполняем список функций по каждому городу
 	for city_code in city_codes:
-		print("City code: ",city_code)
-		#1. Удаляем папки с входными и выходными данными
-		os.system("rm -rf ../in") 
-		os.system("rm -rf ../out")
+		# print("City code: ",city_code)
+		# #1. Удаляем папки с входными и выходными данными
+		# os.system("rm -rf ../in") 
+		# os.system("rm -rf ../out")
 
-		# 2. Копируем архивы с входными и выходными данными по городу
-		os.system("cp "+arch_dir+"/"+city_code+"/* ../")
+		# # 2. Копируем архивы с входными и выходными данными по городу
+		# os.system("cp "+arch_dir+"/"+city_code+"/* ../")
 
-		# 3. Распаковываем папки IN и OUT
-		os.system("unzip ../"+city_code+"_IN -d ../")	
-		os.system("unzip ../"+city_code+"_OUT -d ../")
+		# # 3. Распаковываем папки IN и OUT
+		# os.system("unzip ../"+city_code+"_IN -d ../")	
+		# os.system("unzip ../"+city_code+"_OUT -d ../")
 
-		# 4. Удаляем архивы
-		os.system("rm ../*.zip")
+		# # 4. Удаляем архивы
+		# os.system("rm ../*.zip")
 
-		# # 5. Запускаем расчёт функций
-		# singleload.init()
-		# city_name, region_name = singleload.get_params()
+		# 5. Запускаем расчёт функций
+		singleload.init()
+		city_name, region_name = singleload.get_params()
 
 		# Загрузк маршрутов, Остановок и их связей
 		#singleload.load_route_and_stations()
@@ -97,64 +97,67 @@ if __name__ == '__main__':
 		#singleload.generate_stations_geojson()
 
 		# Загрузка изохронов
-		#isochrones.init()
-		#isochrones.generate_route_isochrones()
+		# isochrones.init()
+		# isochrones.generate_route_isochrones()
+		# metrics.run_isochrone_metrics_in_threads("route_cover",6)
+		# postgres.upload_isochrones(city_code, "route_cover")
+		# postgres.upload_metrics("route_cover")
 
-		# Загружаем дома
-		#reforma.get_city_houses(city_code,city_name,region_name)
-		# Загружаем дома далеко от остановок
-		#isochrones.get_stops_cover_iso()
-		#reforma.get_houses_far_from_stops()
-		#mapbox.create_houses_far_stops_tileset(city_code)
-		#postgres.upload_houses(city_code)
+		# # Загружаем дома
+		# reforma.get_city_houses(city_code,city_name,region_name)
+		# # Загружаем дома далеко от остановок
+		# isochrones.get_stops_cover_iso()
+		# reforma.get_houses_far_from_stops()
+		# mapbox.create_houses_far_stops_tileset(city_code)
+		# postgres.upload_houses(city_code)
 
-		# Загрузка слоя с ДТП
-		# scraper.download_dtp_file(region_name)
-		# #os.system("mv ../out/dtp_map/dtp_map.geojson ../out/dtp_map/dtp_map_src.geojson")
-		# dtp.transform_dtp()
-		# mapbox.create_dtp_map_tileset(city_code)
+		# # Загрузка слоя с ДТП
+		# # scraper.download_dtp_file(region_name)
+		# # #os.system("mv ../out/dtp_map/dtp_map.geojson ../out/dtp_map/dtp_map_src.geojson")
+		# # dtp.transform_dtp()
+		# # mapbox.create_dtp_map_tileset(city_code)
 
-		# Загрузка очагов ДТП
-		# scraper.download_dtp_ochagi(city_code,region_name)
-		# mapbox.run_create_tileset(city_code,"dtp_ochagi")
+		# # Загрузка очагов ДТП
+		# # scraper.download_dtp_ochagi(city_code,region_name)
+		# # mapbox.run_create_tileset(city_code,"dtp_ochagi")
 
-		# # Загрузка камер
-		# scraper.download_traffic_cameras(city_code,region_name)
-		# mapbox.run_create_tileset(city_code,"traffic_cameras")
+		# # # Загрузка камер
+		# # scraper.download_traffic_cameras(city_code,region_name)
+		# # mapbox.run_create_tileset(city_code,"traffic_cameras")
 
-		# Обновление парметров города
-		update_population_params()
-		postgres.upload_city()
+		# # Обновление парметров города
+		# update_population_params()
+		# postgres.upload_city()
 
-		# Обновление параметров домов
-		update_houses_population()
-		postgres.upload_houses(city_code)
+		# # Обновление параметров домов
+		# update_houses_population()
+		# postgres.upload_houses(city_code)
 
-		# Step 7.1: Загрузка метрик для изохронов
-		metrics.run_isochrone_metrics_in_threads("walking",6)
-		metrics.run_isochrone_metrics_in_threads("cycling",6)
-		metrics.run_isochrone_metrics_in_threads("driving",6)
-		metrics.run_isochrone_metrics_in_threads("public_transport",6)
-		metrics.run_isochrone_metrics_in_threads("route_cover",6)
+		# # Step 7.1: Загрузка метрик для изохронов
+		# metrics.run_isochrone_metrics_in_threads("walking",6)
+		# metrics.run_isochrone_metrics_in_threads("cycling",6)
+		# metrics.run_isochrone_metrics_in_threads("driving",6)
+		# metrics.run_isochrone_metrics_in_threads("public_transport",6)
+		# metrics.run_isochrone_metrics_in_threads("route_cover",6)
 
-		# Загрузка метрик для остановок
-		metrics.generate_station_metrics(default_interval=10)
+		# # Загрузка метрик для остановок
+		# metrics.generate_station_metrics(default_interval=10)
 
-		# Загрузка метрик для маршрутов
-		metrics.generate_route_metrics(default_interval=10)
+		# # Загрузка метрик для маршрутов
+		# metrics.generate_route_metrics(default_interval=10)
 
-		# Загрузка метрик для города 
-		metrics.generate_city_metrics()
+		# # Загрузка метрик для города 
+		# metrics.generate_city_metrics()
 
-		# Загрузка метрик в БД
-		postgres.upload_metrics("walking")
-		postgres.upload_metrics("cycling")
-		postgres.upload_metrics("driving")
-		postgres.upload_metrics("public_transport")
-		postgres.upload_metrics("route_cover")	
-		postgres.upload_station_metrics()
-		postgres.upload_route_metrics()
-		postgres.upload_city_metrics()
+		# # Загрузка метрик в БД
+		# postgres.upload_metrics("walking")
+		# postgres.upload_metrics("cycling")
+		# postgres.upload_metrics("driving")
+		# postgres.upload_metrics("public_transport")
+		# postgres.upload_metrics("route_cover")	
+		# postgres.upload_station_metrics()
+		# postgres.upload_route_metrics()
+		# postgres.upload_city_metrics()
 
 		# 6. Добавляем папки IN и OUT в zip архив
 		os.system("cd ..; zip -r "+city_code+"_IN in")

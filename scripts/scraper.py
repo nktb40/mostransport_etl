@@ -21,7 +21,7 @@ proxy_list = []
 # Инициируем WebDriver
 def create_driver(proxy_flag):
 	options = Options()
-	options.headless = True
+	options.headless = False
 	options.add_argument("--window-size=1920,1200")
 
 	if proxy_flag == True:
@@ -467,6 +467,32 @@ def check_ip():
 		# Закрываем браузер
 		driver.quit()
 
+
+# Функция получения списка маршрутов города с wikiroutes
+def get_routes_list(city_code,city_name):
+	# Инициализируем браузер
+	driver = create_driver(False)
+
+	url = 'https://wikiroutes.info/msk/catalog'
+	try:
+		# Читаем страницу
+		read_page(driver, url)
+		# Открываем панель с выбором города
+		driver.find_element_by_id('city').click()
+		# Ждём открытия окна с выбором города
+		WebDriverWait(driver, 5).until(EC.visibility_of_element_located((By.CLASS_NAME,"CitiesPanel-search")))
+		# Вбиваем название города в поиск
+		city_input = driver.find_element_by_css_selector(".CitiesPanel-search")
+		city_input.send_keys(city_name)
+		# Выбираем город
+		driver.find_elements_by_css_selector('div.CitiesPanel-cityLabel')[0].click()
+		time.sleep(10)
+	finally:
+		# Закрываем браузер
+		#driver.quit()
+		print("1")
+
+
 # ===============================================
 if __name__ == '__main__':
 	print("Scrapper Begin")
@@ -483,4 +509,6 @@ if __name__ == '__main__':
 
 	#print(get_yndx_location("Россия, Великий Новгород, Александра Корсунова пр-кт, 40-2"))
 
-	print(get_yndx_location("Россия, Великий Новгород, Мира пр-кт, 2"))
+	#print(get_yndx_location("Россия, Великий Новгород, Мира пр-кт, 2"))
+
+	get_routes_list("KEM","Кемерово")

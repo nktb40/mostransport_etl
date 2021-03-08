@@ -528,3 +528,5 @@ if __name__ == '__main__':
 	# 	generate_isohrone_metrics(isochrones[:100], 'driving', 1)
 	# 	finish = datetime.now()
 	# 	print("Done in ",finish-start)
+
+	generate_route_metrics(10)

@@ -485,6 +485,7 @@ if __name__ == '__main__':
 
 	# Читаем параметры из файла параметров
 	init()
+	postgres = Postgres()
 
 	#== Step 1: Загрузка данных по маршрутам и остановкам
 
@@ -497,9 +498,9 @@ if __name__ == '__main__':
 
 	# Step 1.4: Загрузка данных в БД
 	postgres.upload_city()
-	postgres.upload_stations(city_code)
-	postgres.upload_routes(city_code)
-	postgres.upload_lnk_station_routes(city_code)
+	postgres.upload_stations()
+	postgres.upload_routes()
+	postgres.upload_lnk_station_routes()
 
 	# Step 1.5: Создание векторых файлов
 	mapbox.create_stations_tileset(city_code)
@@ -518,11 +519,11 @@ if __name__ == '__main__':
 	isochrones.get_stops_cover_iso()
 
 	# Step 2.2: Загрузка изохронов в БД
-	postgres.upload_isochrones(city_code, "walking")
-	postgres.upload_isochrones(city_code, "cycling")
-	postgres.upload_isochrones(city_code, "driving")
-	postgres.upload_isochrones(city_code, "public_transport")
-	postgres.upload_isochrones(city_code, "route_cover")
+	postgres.upload_isochrones("walking")
+	postgres.upload_isochrones("cycling")
+	postgres.upload_isochrones("driving")
+	postgres.upload_isochrones("public_transport")
+	postgres.upload_isochrones("route_cover")
 
 	# Step 2.3: Создаём вектор для покрытия остановками
 	mapbox.create_stops_cover_tileset(city_code)
@@ -547,7 +548,7 @@ if __name__ == '__main__':
 	# # Step 5.2: Расчёт домов далеко от остановок
 	reforma.get_houses_far_from_stops()
 	mapbox.create_houses_far_stops_tileset(city_code)
-	postgres.upload_houses(city_code)
+	postgres.upload_houses()
 
 
 	# Step 6: Загрузка слоя с ДТП
