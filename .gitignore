@@ -18,3 +18,5 @@
 /out/stations/mbtiles/*
 /out/density/*
 !.keep
+
+**/__pycache__/
