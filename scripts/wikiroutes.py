@@ -1,5 +1,6 @@
 from common import *
 import time
+import json
 
 TRANSPORT_TYPES_MAPPING = {
 	'автобусы': TransportType.BUS,
@@ -30,8 +31,8 @@ def get_routes(city, list_type = RoutesListType.ALL):
 
 	url = 'https://wikiroutes.info/msk/catalog'
 	try:
-		# Читаем страницу
 		driver.get(url)
+		
 		# Открываем панель с выбором города
 		driver.find_element_by_id('city').click()
 		# Вбиваем название города в поиск
@@ -55,8 +56,8 @@ def get_routes(city, list_type = RoutesListType.ALL):
 			except:
 				print('Transport type {} is unknown!'.format(type_text))
 
-			routes_elements = sublist_block.find_elements(By.XPATH, XPATH_ACTIVE_ROUTE)
-			for route_element in routes_elements:
+			route_elements = sublist_block.find_elements(By.XPATH, XPATH_ACTIVE_ROUTE)
+			for route_element in route_elements:
 				route = {
 					'transport_type': transport_type,
 					'title': route_element.get_attribute('title')
@@ -67,8 +68,6 @@ def get_routes(city, list_type = RoutesListType.ALL):
 	except Exception as e:
 		print(str(e))
 	finally:
-
-		# Закрываем браузер
 		driver.quit()
 		pass
 
@@ -81,10 +80,16 @@ if __name__ == "__main__":
 	if len(sys.argv) > 1:
 		parser = argparse.ArgumentParser(description='Get routes list from wikiroutes.')
 		parser.add_argument('city', type=str, help='City')
+		parser.add_argument('output', type=str, help='Output filename')
 		args = parser.parse_args()
 
 		city = args.city
+		output = args.output
 	else:
 		city = input('City: ')
-	print(str(get_routes(city, RoutesListType.CITY)))
-	input()
+		output = input('Output: ')
+	
+	routes = get_routes(city, RoutesListType.CITY)
+
+	with open(output, 'w') as f:
+		f.write(json.dumps(routes))

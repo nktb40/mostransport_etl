@@ -60,8 +60,6 @@ def fetch_routes(city_name, start_station_name):
 	server = Server('browsermob-proxy')
 	server.start()
 	proxy = server.create_proxy()
-	har_options = { 'captureContent': True }
-	proxy.new_har('yandex', har_options)
 
 	chrome_capabilities = webdriver.DesiredCapabilities.CHROME.copy()
 	chrome_capabilities['acceptInsecureCerts'] = True
@@ -71,7 +69,7 @@ def fetch_routes(city_name, start_station_name):
 
 	driver.get(BASE_URL)
 
-	scrapper = YandexMapsScrapper(driver, proxy, har_options)
+	scrapper = YandexMapsGraphScrapper(driver, proxy, har_options)
 	scrapper.fetch_routes(city_name, start_station_name)
 
 	save_all(scrapper.stations, scrapper.routes)
@@ -97,7 +95,7 @@ def parse_response(request):
 def create_station(station_info):
 	return Station(station_info['id'], station_info['name'], station_info['coordinates'])
 
-class YandexMapsScrapper:
+class YandexMapsGraphScrapper:
 
 	def __init__(self, driver, proxy, har_options):
 		self.driver = driver
@@ -290,9 +288,6 @@ class YandexMapsScrapper:
 			print(str(e))
 			return False
 
-
-
-
 def recursive_dict(obj):
 	if type(obj) is list:
 		return [recursive_dict(e) for e in obj]
@@ -307,6 +302,10 @@ def recursive_dict(obj):
 		except AttributeError:
 			data[key] = value
 	return data
+	
+def save_dict_json(dict_obj, output):
+	with open(output, 'w') as f:
+		f.write(json.dumps([recursive_dict(dict_obj[k]) for k in dict_obj]))
 
 def save_all(stations, routes):
 	now = datetime.now()
@@ -320,13 +319,149 @@ def save_all(stations, routes):
 		stations_output.write(json.dumps([recursive_dict(stations[s]) for s in stations]))
 
 
+SEARCH_TRANSPORT_TYPES_MAPPING = {
+	TransportType.BUS: ['автобус', 'маршрутка'],
+	TransportType.TRAM: ['трамвай'],
+	TransportType.FERRY: ['паром'],
+	TransportType.TROLLEYBUS: ['троллейбус']
+}
+
+# карточка маршрута
+XPATH_TRANSPORT_FOUND = "//h1[@class='masstransit-card-header-view__title']"
+# левая панель содержит какой-либо контент != home-panel (не дефолтный)
+XPATH_SEARCH_COMPLETED = "//div[@class='scroll__content' and div[not(@class='home-panel-content-view')]]"
+
+SEARCH_TIMEOUT = 5
+
+XPATH_SEARCH_RESULT = "//li[contains(@class,'suggest-item-view')]"
+
+class YandexMapsListScrapper:
+
+	def __init__(self, driver, proxy):
+		self.driver = driver
+		self.proxy = proxy
+		self.har_options = { 'captureContent': True }
+		self.proxy.new_har('yandex', self.har_options)
+		self.routes = {}
+		self.stations = {}
+
+	def parse_route(self, route_info):
+		properties = route_info['activeThread']['properties']['ThreadMetaData']
+		route_city = route_info['activeThread']['MapsUIMetaData']['Region'][0]['name']
+		if route_city.lower() != self.city.lower():
+			print('Warning: Another city route {} '.format(route_city, properties['name']))
+			return
+		route = Route(properties['lineId'], properties['name'], properties['type'], properties['seoname'])
+		lines = route_info['features']
+		for line in lines:
+			regions = line['MapsUIMetaData']['Region']
+			# FIXME: use city_id???
+			if regions[0]['id'] != regions[1]['id']:
+				route.intercity = True
+				break
+			else:
+				route.region = regions[0]['id']
+			
+			sections = []
+			line_stations = []
+			for feature in line['features']:
+				if 'coordinates' in feature:  # Station
+					station = create_station(feature)
+					if station.id not in self.stations:
+						self.stations[station.id] = station
+					line_stations.append(station.id)
+				if 'points' in feature:  # sections
+					points = list(feature['points'])
+					if len(sections) > 0 and sections[-1] == points[0]:
+						sections.pop()
+					sections.extend(points)
+			route_line = Line()
+			route_line.stations = line_stations
+			route_line.geometry = {
+				'type': 'LineString',
+				'coordinates': sections
+			}
+			route_line.boundaries = line['properties']['boundedBy']
+			route.lines.append(route_line)
+		
+		assert(route.get_id() not in self.routes)
+		self.routes[route.get_id()] = route
+
+	def fetch_routes(self, city, route_list):
+		self.city = city
+
+		search_input = self.driver.find_element(By.XPATH, XPATH_SEARCH_INPUT)
+
+		for route_request in route_list:
+			try:
+				transport_type_labels = SEARCH_TRANSPORT_TYPES_MAPPING[route_request['transport_type']]
+			except:
+				print('Unknown type id for yandex: {}'.format(route_request['transport_type']))
+			for type_label in transport_type_labels:
+				search_request = '{} {} {}'.format(city, type_label, route_request['title'])
+
+				search_input.send_keys(search_request)
+				# ожидание отображения результатов поиска и клик по первому
+				# !!!! не работает, нужно как-то дождаться окончательной прогрузки, а не первых попавшихся 
+				# элементов, когда еще введен не весь текст запроса
+				# find_interactive_element(self.driver, By.XPATH, XPATH_SEARCH_RESULT).click()
+
+				self.driver.find_element(By.XPATH, XPATH_SEARCH_BUTTON).click()
+
+				# ожидание завершения выполнения поискового запроса
+				WebDriverWait(self.driver, SEARCH_TIMEOUT) \
+						.until(expected_conditions.presence_of_element_located((By.XPATH, XPATH_SEARCH_COMPLETED)))
+			
+				# дополнительная проверка завершения поискового запроса
+				WebDriverWait(self.driver, DEFAULT_INTERACTIVE_TIMEOUT) \
+						.until(expected_conditions.presence_of_element_located((By.XPATH, XPATH_SEARCH_BUTTON)))
+				# очистка строки поиска						
+				find_interactive_element(self.driver, By.XPATH, XPATH_SEARCH_CLEAR_BTN).click()
+
+		requests = self.proxy.har['log']['entries']
+		for request in filter(lambda x: ROUTE_REQUEST_TYPE in x['request']['url'], requests):
+			self.parse_route(parse_response(request))
+
+
 if __name__ == "__main__":
-	city = input('City: ')
-	station = input('Station: ') 
-	fetch_routes(city, station)
+	import argparse
+	import sys
 
+	if len(sys.argv) > 1:
+		parser = argparse.ArgumentParser(description='Get routes list from wikiroutes.')
+		parser.add_argument('city', type=str, help='City')
+		parser.add_argument('routes', type=str, help='Routes json')
+		args = parser.parse_args()
 
+		city = args.city
+		route_list = args.routes
+	else:
+		city = input('City: ')
+		route_list = input('Routes: ')
 
+	server = Server('browsermob-proxy')
+	server.start()
+	proxy = server.create_proxy()
 
+	chrome_capabilities = webdriver.DesiredCapabilities.CHROME.copy()
+	chrome_capabilities['acceptInsecureCerts'] = True
+	proxy.add_to_capabilities(chrome_capabilities)
 
+	driver = webdriver.Chrome(desired_capabilities=chrome_capabilities)
 
+	driver.get(BASE_URL)
+
+	scrapper = YandexMapsListScrapper(driver, proxy)
+	with open(route_list) as f:
+		routes = json.loads(f.read())
+
+	scrapper.fetch_routes(city, routes)
+
+	routes_output = city + '_routes.json'
+	stations_output = city + '_stations.json'
+
+	save_dict_json(scrapper.stations, stations_output)
+	save_dict_json(scrapper.routes, routes_output)
+
+	server.stop()
+	driver.quit()
