@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 import os
 import time
+import re
 
 class Line:
 	def __init__(self):
@@ -331,6 +332,8 @@ XPATH_TRANSPORT_FOUND = "//h1[@class='masstransit-card-header-view__title']"
 # левая панель содержит какой-либо контент != home-panel (не дефолтный)
 XPATH_SEARCH_COMPLETED = "//div[@class='scroll__content' and div[not(@class='home-panel-content-view')]]"
 
+TITLE_FILTER_PATTERN = 'ТЦ "([^"]+)"'
+
 SEARCH_TIMEOUT = 5
 
 XPATH_SEARCH_RESULT = "//li[contains(@class,'suggest-item-view')]"
@@ -345,12 +348,22 @@ class YandexMapsListScrapper:
 		self.routes = {}
 		self.stations = {}
 
+	def check_city(self, regions):
+		for reg in regions:
+			if reg['name'].lower() == self.city.lower():
+				return True
+		return False
+
+	def filter_title(self, title):
+		return re.sub(TITLE_FILTER_PATTERN, '\\1', title)
+
 	def parse_route(self, route_info):
 		properties = route_info['activeThread']['properties']['ThreadMetaData']
-		route_city = route_info['activeThread']['MapsUIMetaData']['Region'][0]['name']
-		if route_city.lower() != self.city.lower():
-			print('Warning: Another city route {} '.format(route_city, properties['name']))
+		# TODO: проверить обе конечные остановки, если хотя бы одна в правильном городе, то наверное нужно учитывать маршрут
+		if not self.check_city(route_info['activeThread']['MapsUIMetaData']['Region']):
+			print('Warning: Another city route {}'.format(properties['name']))
 			return
+
 		route = Route(properties['lineId'], properties['name'], properties['type'], properties['seoname'])
 		lines = route_info['features']
 		for line in lines:
@@ -384,8 +397,11 @@ class YandexMapsListScrapper:
 			route_line.boundaries = line['properties']['boundedBy']
 			route.lines.append(route_line)
 		
-		assert(route.get_id() not in self.routes)
-		self.routes[route.get_id()] = route
+		if route.get_id() in self.routes:
+			print('Warning: Duplicate route id {} with name {}, existing name {}'.format(
+				route.get_id(), route.name, self.routes[route.get_id()].name))
+		else:
+			self.routes[route.get_id()] = route
 
 	def fetch_routes(self, city, route_list):
 		self.city = city
@@ -397,8 +413,9 @@ class YandexMapsListScrapper:
 				transport_type_labels = SEARCH_TRANSPORT_TYPES_MAPPING[route_request['transport_type']]
 			except:
 				print('Unknown type id for yandex: {}'.format(route_request['transport_type']))
+			route_title = self.filter_title(route_request['title'])
 			for type_label in transport_type_labels:
-				search_request = '{} {} {}'.format(city, type_label, route_request['title'])
+				search_request = '{} {} {}'.format(city, type_label, route_title)
 
 				search_input.send_keys(search_request)
 				# ожидание отображения результатов поиска и клик по первому

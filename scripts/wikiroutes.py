@@ -1,6 +1,7 @@
 from common import *
 import time
 import json
+import re
 
 TRANSPORT_TYPES_MAPPING = {
 	'автобусы': TransportType.BUS,
@@ -32,7 +33,7 @@ def get_routes(city, list_type = RoutesListType.ALL):
 	url = 'https://wikiroutes.info/msk/catalog'
 	try:
 		driver.get(url)
-		
+
 		# Открываем панель с выбором города
 		driver.find_element_by_id('city').click()
 		# Вбиваем название города в поиск
@@ -71,6 +72,31 @@ def get_routes(city, list_type = RoutesListType.ALL):
 		driver.quit()
 		pass
 
+# названия в форме '123 (Старт - Финиш)' разделяются на два '123' и 'Старт - Финиш'
+NUMBER_AND_NAME_PATTERN = "([^\(]+)\s(\([^\)]+\))"
+WITHOUT_NUMBER = 'б/н'
+
+def extend_route_list(route_list):
+	result = []
+	matcher = re.compile(NUMBER_AND_NAME_PATTERN)
+	for route in route_list:
+		title = route['title']
+
+		groups = matcher.findall(title)
+
+		if len(groups) > 0:
+			for t in groups[0]:
+				if t == WITHOUT_NUMBER:
+					continue
+				additional_route = {
+					'transport_type': route['transport_type'],
+					'title': t.lstrip('(').rstrip(')')
+				}
+				result.append(additional_route)
+		else:
+			result.append(route)
+
+	return result
 
 
 if __name__ == "__main__":
@@ -89,7 +115,7 @@ if __name__ == "__main__":
 		city = input('City: ')
 		output = input('Output: ')
 	
-	routes = get_routes(city, RoutesListType.CITY)
+	routes = extend_route_list(get_routes(city, RoutesListType.CITY))
 
 	with open(output, 'w') as f:
 		f.write(json.dumps(routes))

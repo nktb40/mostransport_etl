@@ -10,7 +10,7 @@ from enum import Enum
 
 DEFAULT_INTERACTIVE_TIMEOUT = 60
 
-class TransportType(Enum):
+class TransportType:
 	TRAM = 0
 	METRO = 1
 	RAIL = 2
@@ -26,15 +26,15 @@ class TransportType(Enum):
 TRANSPORT_TYPES = {
 	# gtfs_code name labels description
 	TransportType.TRAM: (0, ['трамвай', 'tram', 'streetcar', 'LRT', 'light rail'], 'Any light rail or street level system within a metropolitan area'),
-	1: (1, ['метро', 'subway', 'metro'], 'Any underground rail system within a metropolitan area'),
-	2: (2, ['электричка', 'поезд', 'rail'], 'Used for intercity or long-distance travel'),
-	3: (3, ['автобус', 'bus'], 'Used for short- and long-distance bus route'),
-	4: (4, ['паром', 'катер', 'водный транспорт', 'ferry'], 'Used for short- and long-distance boat service'),
-	5: (5, ['канатный трамвай', 'cable tram'], 'Used for street-level rail cars where the cable runs beneath the vehicle, e.g., cable car in San Francisco'),
-	6: (6, ['канатная дорога', 'aerial lift'], 'Cable transport where cabins, cars, gondolas or open chairs are suspended by means of one or more cables'),
-	7: (7, ['фуникулер', 'funicular'], 'Any rail system designed for steep inclines'),
-	11: (11, ['троллейбус', 'trolleybus'], 'Electric buses that draw power from overhead wires using poles'),
-	12: (12, ['монорельс', 'monorail'], 'Railway in which the track consists of a single rail or a beam')
+	TransportType.METRO: (1, ['метро', 'subway', 'metro'], 'Any underground rail system within a metropolitan area'),
+	TransportType.RAIL: (2, ['электричка', 'поезд', 'rail'], 'Used for intercity or long-distance travel'),
+	TransportType.BUS: (3, ['автобус', 'bus'], 'Used for short- and long-distance bus route'),
+	TransportType.FERRY: (4, ['паром', 'катер', 'водный транспорт', 'ferry'], 'Used for short- and long-distance boat service'),
+	TransportType.CABLE_TRAM: (5, ['канатный трамвай', 'cable tram'], 'Used for street-level rail cars where the cable runs beneath the vehicle, e.g., cable car in San Francisco'),
+	TransportType.AERIAL_LIFT: (6, ['канатная дорога', 'aerial lift'], 'Cable transport where cabins, cars, gondolas or open chairs are suspended by means of one or more cables'),
+	TransportType.FUNICULAR: (7, ['фуникулер', 'funicular'], 'Any rail system designed for steep inclines'),
+	TransportType.TROLLEYBUS: (11, ['троллейбус', 'trolleybus'], 'Electric buses that draw power from overhead wires using poles'),
+	TransportType.MONORAIL: (12, ['монорельс', 'monorail'], 'Railway in which the track consists of a single rail or a beam')
 }
 
 def parse_transport_type(label):
