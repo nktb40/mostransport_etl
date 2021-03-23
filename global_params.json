@@ -1,5 +1,5 @@
 {
-	"city_codes":["KEM"],
+	"city_codes":["KRG"],
 	"all_city_codes":["BEL","CHB","CHLB","EKT","IRK","IZH","KAZ","KEM","KIR","KRD","KRS","MNK","NNG","NSK","NZV","OMS","PEZ","PRM","SAM","SPB","SRV","TSK","TUL","TYM","UFA","USH","VLD","VLG","VNO","VOJ","YKT","VDK","IVN","KUR","STV","CHPV"],
 	"threads_num": 6,
 	"archive_folder_dir":"../../archive_data"

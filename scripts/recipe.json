@@ -1,1 +1,1 @@
-{"version": 1, "layers": {"houses_far_stops": {"source": "mapbox://tileset-source/nktb/NNG-houses", "minzoom": 0, "maxzoom": 13}}}
+{"version": 1, "layers": {"bus_stops": {"source": "", "minzoom": 0, "maxzoom": 13}}}

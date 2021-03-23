@@ -139,7 +139,8 @@ def create_tileset(city_code, layer_name):
 	run_cmd(pub_cmd)
 
 	# Загружаем связь города с вектором в БД
-	postgres.upload_layer(city_code,layer_name)
+	p = postgres.Postgres()
+	p.upload_layer(layer_name)
 
 	# Удаляем файл рецепта
 	#remove_recipe()

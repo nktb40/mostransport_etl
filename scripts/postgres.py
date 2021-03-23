@@ -10,18 +10,18 @@ import numpy
 class Postgres:
 	# Подключение к БД
 	def get_connection(self):
-		conn = pg.connect(
-			host="localhost",
-			database="mostransport_development",
-			user="mostransport",
-			password="password"
-		)
 		# conn = pg.connect(
-		# 	host="84.201.146.240",
-		# 	database="mostransport",
+		# 	host="localhost",
+		# 	database="mostransport_development",
 		# 	user="mostransport",
-		# 	password="mostranspass"
+		# 	password="password"
 		# )
+		conn = pg.connect(
+			host="84.201.146.240",
+			database="mostransport",
+			user="mostransport",
+			password="mostranspass"
+		)
 		return conn
 
 	# Получение данных из БД
@@ -66,6 +66,8 @@ class Postgres:
 
 		# Отправялем запрос на вставку
 		self.send_query(q)
+
+		self.city_id = self.send_query("select id from cities where code='"+self.city_code+"'")[0][0]
 
 		print("Finish upload_city")
 
@@ -474,7 +476,9 @@ class Postgres:
 		with open("../in/params/params.json", 'r') as file:
 				city_params = json.load(file)
 		self.city_code = city_params['city_code']
-		self.city_id = self.send_query("select id from cities where code='"+self.city_code+"'")[0][0]
+		result = self.send_query("select id from cities where code='"+self.city_code+"'")
+		if len(result) > 0:
+			self.city_id = result[0][0]
 
 # ===============================================
 if __name__ == '__main__':

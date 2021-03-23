@@ -79,10 +79,13 @@ def transform_dtp(city_code):
 		features.append(f)
 
 	# Добавляем  дтп без пострадавших, если есть такой файл
-	if len(glob.glob('../out/dtp_map/dtp_not_injured_src.geojson')) == 1:
+	if len(glob.glob('../out/dtp_map/dtp_no_injured.geojson')) == 1:
+		with open('../out/dtp_map/dtp_no_injured.geojson', 'r') as read_obj:
+			dtps = json.load(read_obj)['features']
+			features.extend(dtps)
+	elif len(glob.glob('../out/dtp_map/dtp_not_injured_src.geojson')) == 1:
 		features.extend(transform_no_injured())
-
-	if len(glob.glob('../out/dtp_map/dtp_not_injured.csv')) == 1:
+	elif len(glob.glob('../out/dtp_map/dtp_not_injured.csv')) == 1:
 		features.extend(geocode_dtp_not_injured(city_code))
 
 	# Формироуем коллекцию
@@ -139,7 +142,7 @@ def transform_no_injured():
 	return features
 
 # Функция геокодирования адресов дтп из csv файла 
-def geocode_dtp_not_injured():
+def geocode_dtp_not_injured(city_code):
 	
 	features = []
 
@@ -184,7 +187,13 @@ def geocode_dtp_not_injured():
 				
 				features.append(f)
 	# Выполняем геокодирование
-	features_with_geom = osm.geocode_addresses_in_threads(city_code,features,3)
+	features_with_geom = osm.geocode_addresses_in_threads(city_code,features,5)
+
+	collection = {'type': 'FeatureCollection', 'features':features_with_geom}
+	
+	os.system('mkdir ../out/dtp_map')
+	with open('../out/dtp_map/dtp_no_injured.geojson', 'w') as file_out:
+		file_out.write(json.dumps(collection,ensure_ascii=False))
 	
 	return features_with_geom
 
@@ -193,8 +202,8 @@ if __name__ == '__main__':
 
 	#convert_to_csv()
 
-	transform_dtp()
+	transform_dtp("VNO")
 
 	#transform_no_injured()
 
-	#geocode_dtp_not_injured()
+	#geocode_dtp_not_injured("VNO")

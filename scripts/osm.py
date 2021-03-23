@@ -87,8 +87,9 @@ def geocode_addresses(houses, results, part, bbox):
 # Запуск в многопоточном режиме
 def geocode_addresses_in_threads(city_code,houses,threads_num):
 	print("Start get houses location. Time:",datetime.now())
+	p = postgres.Postgres()
 
-	bbox_list = postgres.send_query("select bbox from cities where code='"+city_code+"'")[0]
+	bbox_list = p.send_query("select bbox from cities where code='"+city_code+"'")[0]
 	bbox = ','.join([str(i) for i in bbox_list])
 	
 	manager = multiprocessing.Manager()

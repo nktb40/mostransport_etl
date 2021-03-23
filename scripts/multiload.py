@@ -67,20 +67,20 @@ if __name__ == '__main__':
 
 	# Выполняем список функций по каждому городу
 	for city_code in city_codes:
-		# print("City code: ",city_code)
-		# #1. Удаляем папки с входными и выходными данными
-		# os.system("rm -rf ../in") 
-		# os.system("rm -rf ../out")
+		print("City code: ",city_code)
+		#1. Удаляем папки с входными и выходными данными
+		os.system("rm -rf ../in") 
+		os.system("rm -rf ../out")
 
-		# # 2. Копируем архивы с входными и выходными данными по городу
-		# os.system("cp "+arch_dir+"/"+city_code+"/* ../")
+		# 2. Копируем архивы с входными и выходными данными по городу
+		os.system("cp "+arch_dir+"/"+city_code+"/* ../")
 
-		# # 3. Распаковываем папки IN и OUT
-		# os.system("unzip ../"+city_code+"_IN -d ../")	
-		# os.system("unzip ../"+city_code+"_OUT -d ../")
+		# 3. Распаковываем папки IN и OUT
+		os.system("unzip ../"+city_code+"_IN -d ../")	
+		os.system("unzip ../"+city_code+"_OUT -d ../")
 
-		# # 4. Удаляем архивы
-		# os.system("rm ../*.zip")
+		# 4. Удаляем архивы
+		os.system("rm ../*.zip")
 
 		# 5. Запускаем расчёт функций
 		singleload.init()
@@ -159,11 +159,11 @@ if __name__ == '__main__':
 		# postgres.upload_route_metrics()
 		# postgres.upload_city_metrics()
 
-		# 6. Добавляем папки IN и OUT в zip архив
-		os.system("cd ..; zip -r "+city_code+"_IN in")
-		os.system("cd ..; zip -r "+city_code+"_OUT out")
+		# # 6. Добавляем папки IN и OUT в zip архив
+		# os.system("cd ..; zip -r "+city_code+"_IN in")
+		# os.system("cd ..; zip -r "+city_code+"_OUT out")
 
-		# 7. Перемещаем zip файлы в архив
-		os.system("cd "+arch_dir+"; mkdir "+city_code)
-		os.system("mv ../"+city_code+"_IN.zip "+arch_dir+"/"+city_code+"/")
-		os.system("mv ../"+city_code+"_OUT.zip "+arch_dir+"/"+city_code+"/")
+		# # 7. Перемещаем zip файлы в архив
+		# os.system("cd "+arch_dir+"; mkdir "+city_code)
+		# os.system("mv ../"+city_code+"_IN.zip "+arch_dir+"/"+city_code+"/")
+		# os.system("mv ../"+city_code+"_OUT.zip "+arch_dir+"/"+city_code+"/")

@@ -485,22 +485,22 @@ if __name__ == '__main__':
 
 	# Читаем параметры из файла параметров
 	init()
-	postgres = Postgres()
+	postgres = postgres.Postgres()
 
 	#== Step 1: Загрузка данных по маршрутам и остановкам
 
-	# Step 1.1: Загрузка маршрутов и остановок
-	load_route_and_stations()
+	# # Step 1.1: Загрузка маршрутов и остановок
+	# load_route_and_stations()
 	
-	# Step 1.2: Выгрузка в формат geojson остановок и маршрутов
-	generate_stations_geojson()
-	generate_routes_geojson()
+	# # Step 1.2: Выгрузка в формат geojson остановок и маршрутов
+	# generate_stations_geojson()
+	# generate_routes_geojson()
 
-	# Step 1.4: Загрузка данных в БД
-	postgres.upload_city()
-	postgres.upload_stations()
-	postgres.upload_routes()
-	postgres.upload_lnk_station_routes()
+	# # Step 1.4: Загрузка данных в БД
+	# postgres.upload_city()
+	# postgres.upload_stations()
+	# postgres.upload_routes()
+	# postgres.upload_lnk_station_routes()
 
 	# Step 1.5: Создание векторых файлов
 	mapbox.create_stations_tileset(city_code)

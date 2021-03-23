@@ -430,7 +430,7 @@ def get_yndx_location_light(driver,address):
 		print("ERROR YANDEX",address)
 		raise e
 		# Закрываем браузер
-		driver.quit()
+		#driver.quit()
 
 # Тестовая функция для отображения списка запросов
 def get_yndx_requests():
