@@ -16,7 +16,7 @@ TRANSPORT_TYPES_MAPPING = {
 
 CLASS_CITY_SEARCH_PANEL = 'CitiesPanel-search'
 XPATH_ROUTE_LIST_TYPE_BUTTON = "//span[text() = '{}']"
-CSS_SUBLIST_BLOCK = 'div.typeBlock'
+XPATH_SUBLIST_BLOCK = "//div[@class='typeBlock']"
 CSS_SUBLIST_HEADER = 'span.typeHeader-name'
 XPATH_ACTIVE_ROUTE = ".//a[not(contains(@class,'no-active')) and not(contains(@class,'hidden'))]"
 
@@ -48,7 +48,7 @@ def get_routes(city, list_type = RoutesListType.ALL):
 
 		routes = []
 
-		sublist_blocks = driver.find_elements_by_css_selector(CSS_SUBLIST_BLOCK)
+		sublist_blocks = driver.find_elements(By.XPATH, XPATH_SUBLIST_BLOCK)
 		for sublist_block in sublist_blocks:
 			header = sublist_block.find_element_by_css_selector(CSS_SUBLIST_HEADER)
 			type_text = header.get_attribute('innerHTML').lower()
