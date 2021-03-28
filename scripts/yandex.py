@@ -5,6 +5,7 @@ from datetime import datetime
 import os
 import time
 import re
+from shapely.geometry import LineString, Point
 
 class Line:
 	def __init__(self):
@@ -349,59 +350,79 @@ class YandexMapsListScrapper:
 		self.stations = {}
 
 	def check_city(self, regions):
+		"""
+		Если хотя бы одна из остановок находится в правильном регионе, то возвращается True, иначе False
+		"""
 		for reg in regions:
 			if reg['name'].lower() == self.city.lower():
 				return True
 		return False
 
 	def filter_title(self, title):
+		"""
+		Фильтрация названий маршрутов, содержащих названия ТЦ
+		"""
 		return re.sub(TITLE_FILTER_PATTERN, '\\1', title)
 
 	def parse_route(self, route_info):
+		"""
+		Парсинг маршрута из json-тела запроса Yandex getLine()
+		"""
 		properties = route_info['activeThread']['properties']['ThreadMetaData']
-		# TODO: проверить обе конечные остановки, если хотя бы одна в правильном городе, то наверное нужно учитывать маршрут
 		if not self.check_city(route_info['activeThread']['MapsUIMetaData']['Region']):
 			print('Warning: Another city route {}'.format(properties['name']))
 			return
 
-		route = Route(properties['lineId'], properties['name'], properties['type'], properties['seoname'])
-		lines = route_info['features']
-		for line in lines:
-			regions = line['MapsUIMetaData']['Region']
-			# FIXME: use city_id???
-			if regions[0]['id'] != regions[1]['id']:
-				route.intercity = True
-				break
-			else:
-				route.region = regions[0]['id']
-			
+		route_id = properties['lineId']
+		route_name = properties['name']
+		transport_type = properties['type']
+		directions = []
+		threads = route_info['features']  # все треки маршрута
+		for thread in threads:
 			sections = []
-			line_stations = []
-			for feature in line['features']:
-				if 'coordinates' in feature:  # Station
-					station = create_station(feature)
-					if station.id not in self.stations:
-						self.stations[station.id] = station
-					line_stations.append(station.id)
-				if 'points' in feature:  # sections
+			stations = []
+			for feature in thread['features']:
+				if 'coordinates' in feature:  # элемент, обозначающий остановку
+					station = {
+						'geometry': {
+							'selection': Point(tuple(feature['coordinates']))
+						},
+						'id': feature['id'],
+						'name': feature['name'],
+						'stationd_id': feature['id']
+					}
+					stations.append(station)
+
+				if 'points' in feature:  # элемент, обозначающий часть трассы маршрута
 					points = list(feature['points'])
+					# каждая следующая часть трека на месте первой точки обычно имеет точку, равную
+					# последней точке в предыдущей части трека, удаляем повторение
 					if len(sections) > 0 and sections[-1] == points[0]:
 						sections.pop()
 					sections.extend(points)
-			route_line = Line()
-			route_line.stations = line_stations
-			route_line.geometry = {
-				'type': 'LineString',
-				'coordinates': sections
+
+			direction = {
+				'geometry': {
+					'selection': LineString(list(map(lambda x: tuple(x), sections))).wkt
+				},
+				'id': thread['properties']['ThreadMetaData']['id'],
+				'platforms': stations
 			}
-			route_line.boundaries = line['properties']['boundedBy']
-			route.lines.append(route_line)
-		
-		if route.get_id() in self.routes:
+
+			directions.append(direction)
+
+		route = {
+			'directions': directions,
+			'id': route_id,
+			'name': route_name,
+			'subtype': transport_type
+		}
+
+		if route_id in self.routes:
 			print('Warning: Duplicate route id {} with name {}, existing name {}'.format(
-				route.get_id(), route.name, self.routes[route.get_id()].name))
+				route_id, route_name, self.routes[route_id]['name']))
 		else:
-			self.routes[route.get_id()] = route
+			self.routes[route_id] = route
 
 	def fetch_routes(self, city, route_list):
 		self.city = city
@@ -428,11 +449,11 @@ class YandexMapsListScrapper:
 				# ожидание завершения выполнения поискового запроса
 				WebDriverWait(self.driver, SEARCH_TIMEOUT) \
 						.until(expected_conditions.presence_of_element_located((By.XPATH, XPATH_SEARCH_COMPLETED)))
-			
+
 				# дополнительная проверка завершения поискового запроса
 				WebDriverWait(self.driver, DEFAULT_INTERACTIVE_TIMEOUT) \
 						.until(expected_conditions.presence_of_element_located((By.XPATH, XPATH_SEARCH_BUTTON)))
-				# очистка строки поиска						
+				# очистка строки поиска
 				find_interactive_element(self.driver, By.XPATH, XPATH_SEARCH_CLEAR_BTN).click()
 
 		requests = self.proxy.har['log']['entries']
@@ -475,10 +496,15 @@ if __name__ == "__main__":
 	scrapper.fetch_routes(city, routes)
 
 	routes_output = city + '_routes.json'
-	stations_output = city + '_stations.json'
+	# stations_output = city + '_stations.json'
 
-	save_dict_json(scrapper.stations, stations_output)
-	save_dict_json(scrapper.routes, routes_output)
+	# save_dict_json(scrapper.stations, stations_output)
+	format_2gis = {
+		'result': {
+			'items': list(scrapper.routes.values())
+		}
+	}
+	save_dict_json(format_2gis, routes_output)
 
 	server.stop()
 	driver.quit()
