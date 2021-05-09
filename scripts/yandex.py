@@ -92,7 +92,11 @@ def log_station_out(station):
 	print('<<S ' + station.name)
 
 def parse_response(request):
-	return json.loads(request['response']['content']['text'])['data']
+	content = json.loads(request['response']['content']['text'])
+	if not 'data' in content:
+		print('Warning: Invalid response ' + content)
+	return content['data']
+
 
 def create_station(station_info):
 	return Station(station_info['id'], station_info['name'], station_info['coordinates'])
@@ -335,7 +339,7 @@ XPATH_SEARCH_COMPLETED = "//div[@class='scroll__content' and div[not(@class='hom
 
 TITLE_FILTER_PATTERN = 'ТЦ "([^"]+)"'
 
-SEARCH_TIMEOUT = 5
+SEARCH_TIMEOUT = 30
 
 XPATH_SEARCH_RESULT = "//li[contains(@class,'suggest-item-view')]"
 
@@ -385,7 +389,7 @@ class YandexMapsListScrapper:
 				if 'coordinates' in feature:  # элемент, обозначающий остановку
 					station = {
 						'geometry': {
-							'selection': Point(tuple(feature['coordinates']))
+							'selection': Point(tuple(feature['coordinates'])).wkt
 						},
 						'id': feature['id'],
 						'name': feature['name'],
@@ -504,7 +508,8 @@ if __name__ == "__main__":
 			'items': list(scrapper.routes.values())
 		}
 	}
-	save_dict_json(format_2gis, routes_output)
+	with open(routes_output, 'w') as f:
+		f.write(json.dumps(format_2gis, ensure_ascii=False))
 
 	server.stop()
 	driver.quit()
